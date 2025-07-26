@@ -179,7 +179,7 @@ export default function ProfileSetup() {
 
       if (error) throw error;
 
-      // Navigate to dashboard (would be created next)
+      // Navigate to dashboard
       navigate('/dashboard');
     } catch (error: any) {
       setError(error.message || 'Failed to save profile');
