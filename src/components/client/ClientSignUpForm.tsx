@@ -3,14 +3,18 @@ import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Building, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { OTPVerification } from './OTPVerification';
+import { useToast } from '@/hooks/use-toast';
 
 export function ClientSignUpForm() {
   const { signUp } = useClientAuth();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [showOTPVerification, setShowOTPVerification] = useState(false);
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -67,9 +71,39 @@ export function ClientSignUpForm() {
 
     if (error) {
       setError(error.message);
+      setLoading(false);
+    } else {
+      // Show OTP verification
+      setShowOTPVerification(true);
+      toast({
+        title: "Check your email!",
+        description: "We've sent you a verification code to complete your registration.",
+      });
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  const handleOTPSuccess = () => {
+    toast({
+      title: "Welcome to Usergy!",
+      description: "Your account has been created successfully.",
+    });
+    // The auth state change in ClientAuthContext will handle the redirect
+  };
+
+  const handleBackToSignup = () => {
+    setShowOTPVerification(false);
+  };
+
+  if (showOTPVerification) {
+    return (
+      <OTPVerification
+        email={formData.email}
+        onSuccess={handleOTPSuccess}
+        onBack={handleBackToSignup}
+      />
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
