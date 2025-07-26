@@ -1,108 +1,111 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
 
 interface Node {
+  id: number;
   x: number;
   y: number;
-  vx: number;
-  vy: number;
-  radius: number;
-  opacity: number;
+  size: number;
+  color: string;
+  delay: number;
 }
 
-export function NetworkNodes() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
-  const nodesRef = useRef<Node[]>([]);
+export const NetworkNodes: React.FC = () => {
+  const [nodes] = useState<Node[]>(() => {
+    return Array.from({ length: 8 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 20 + 10,
+      color: i % 3 === 0 ? 'bg-primary-start' : i % 3 === 1 ? 'bg-primary-end' : 'bg-success',
+      delay: Math.random() * 6
+    }));
+  });
+
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-
-    // Initialize nodes
-    const nodeCount = Math.floor((canvas.width * canvas.height) / 15000);
-    nodesRef.current = Array.from({ length: nodeCount }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.5,
-      vy: (Math.random() - 0.5) * 0.5,
-      radius: Math.random() * 2 + 1,
-      opacity: Math.random() * 0.3 + 0.1,
-    }));
-
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Update and draw nodes
-      nodesRef.current.forEach((node) => {
-        // Update position
-        node.x += node.vx;
-        node.y += node.vy;
-
-        // Bounce off edges
-        if (node.x <= 0 || node.x >= canvas.width) node.vx *= -1;
-        if (node.y <= 0 || node.y >= canvas.height) node.vy *= -1;
-
-        // Keep in bounds
-        node.x = Math.max(0, Math.min(canvas.width, node.x));
-        node.y = Math.max(0, Math.min(canvas.height, node.y));
-
-        // Draw node
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `hsla(198, 100%, 74%, ${node.opacity})`;
-        ctx.fill();
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePosition({
+        x: (e.clientX / window.innerWidth) * 100,
+        y: (e.clientY / window.innerHeight) * 100
       });
-
-      // Draw connections
-      for (let i = 0; i < nodesRef.current.length; i++) {
-        for (let j = i + 1; j < nodesRef.current.length; j++) {
-          const nodeA = nodesRef.current[i];
-          const nodeB = nodesRef.current[j];
-          const distance = Math.sqrt(
-            Math.pow(nodeA.x - nodeB.x, 2) + Math.pow(nodeA.y - nodeB.y, 2)
-          );
-
-          if (distance < 120) {
-            const opacity = (120 - distance) / 120 * 0.1;
-            ctx.beginPath();
-            ctx.moveTo(nodeA.x, nodeA.y);
-            ctx.lineTo(nodeB.x, nodeB.y);
-            ctx.strokeStyle = `hsla(198, 100%, 74%, ${opacity})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-
-      animationRef.current = requestAnimationFrame(animate);
     };
 
-    animate();
-
-    return () => {
-      window.removeEventListener('resize', resizeCanvas);
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 -z-10 opacity-40"
-      style={{ background: 'radial-gradient(ellipse at center, hsl(var(--muted)/0.3) 0%, transparent 70%)' }}
-    />
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {/* Background Gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary-start/5 via-transparent to-primary-end/5" />
+      
+      {/* Floating Nodes */}
+      {nodes.map((node) => (
+        <div
+          key={node.id}
+          className={cn(
+            "floating-node rounded-full",
+            node.color,
+            "animate-float"
+          )}
+          style={{
+            left: `${node.x}%`,
+            top: `${node.y}%`,
+            width: `${node.size}px`,
+            height: `${node.size}px`,
+            animationDelay: `${node.delay}s`,
+            transform: `translate(${(mousePosition.x - 50) * 0.02}px, ${(mousePosition.y - 50) * 0.02}px)`
+          }}
+        />
+      ))}
+
+      {/* Connection Lines */}
+      <svg className="absolute inset-0 w-full h-full opacity-20">
+        <defs>
+          <linearGradient id="connectionGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="transparent" />
+            <stop offset="50%" stopColor="hsl(var(--primary-start))" />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+        {nodes.slice(0, 4).map((node, i) => {
+          const nextNode = nodes[i + 1] || nodes[0];
+          return (
+            <line
+              key={`line-${i}`}
+              x1={`${node.x}%`}
+              y1={`${node.y}%`}
+              x2={`${nextNode.x}%`}
+              y2={`${nextNode.y}%`}
+              stroke="url(#connectionGradient)"
+              strokeWidth="2"
+              className="animate-pulse-slow"
+            />
+          );
+        })}
+      </svg>
+
+      {/* Floating Tech Icons */}
+      <div className="absolute top-1/4 right-1/4 text-primary-start/30 animate-float-delayed">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+      </div>
+      
+      <div className="absolute bottom-1/3 left-1/5 text-primary-end/30 animate-float-slow">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.5 6c-2.61.7-5.67 1-8.5 1s-5.89-.3-8.5-1L3 8c2.61.7 5.67 1 8.5 1s5.89-.3 8.5-1l.5-2z"/>
+          <path d="M3 8v8c2.61.7 5.67 1 8.5 1s5.89-.3 8.5-1V8c-2.61.7-5.67 1-8.5 1S5.61 8.7 3 8z"/>
+        </svg>
+      </div>
+      
+      <div className="absolute top-1/2 left-1/6 text-success/30 animate-float">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+      </div>
+    </div>
   );
-}
+};
