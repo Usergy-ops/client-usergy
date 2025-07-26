@@ -8,6 +8,7 @@ import { ClientProtectedRoute } from "@/components/client/ClientProtectedRoute";
 import Welcome from "./pages/Welcome";
 import ProfileSetup from "./pages/ProfileSetup";
 import ClientDashboard from "./pages/ClientDashboard";
+import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Welcome />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route 
               path="/profile" 
               element={

@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -20,22 +21,48 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
+  const navigate = useNavigate();
 
-  const checkClientAuth = async (userId: string) => {
+  const checkClientAuth = async (userId: string, isNewSignup = false) => {
     try {
-      const { data: accountType } = await supabase
+      // For new signups, wait a bit for the trigger to create account type
+      if (isNewSignup) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      const { data: accountType, error } = await supabase
         .from('account_types')
         .select('account_type')
         .eq('auth_user_id', userId)
         .eq('account_type', 'client')
-        .single();
+        .maybeSingle();
+      
+      if (error) {
+        console.error('Error checking account type:', error);
+        return false;
+      }
       
       const isClient = !!accountType;
       setIsClientAccount(isClient);
       
-      if (!isClient && userId) {
-        // Redirect to user portal if not a client
-        window.location.href = 'https://user.usergy.ai';
+      // Only redirect if it's not a new signup and user is not a client
+      if (!isClient && !isNewSignup) {
+        // Check if they have a user account
+        const { data: userAccount } = await supabase
+          .from('account_types')
+          .select('account_type')
+          .eq('auth_user_id', userId)
+          .eq('account_type', 'user')
+          .maybeSingle();
+        
+        if (userAccount) {
+          // They have a user account, redirect to user portal
+          window.location.href = 'https://user.usergy.ai';
+        } else {
+          // No account type at all, sign them out
+          await supabase.auth.signOut();
+          navigate('/');
+        }
       }
       
       return isClient;
@@ -47,29 +74,12 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state change:', event, session?.user?.id);
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Defer client auth check to avoid deadlock
-          setTimeout(() => {
-            checkClientAuth(session.user.id);
-          }, 0);
-        } else {
-          setIsClientAccount(false);
-        }
-        
-        setLoading(false);
-      }
-    );
+    let mounted = true;
 
-    // THEN check for existing session
+    // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session check:', session?.user?.id);
+      if (!mounted) return;
+      
       setSession(session);
       setUser(session?.user ?? null);
       
@@ -79,8 +89,34 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mounted) return;
+        
+        console.log('Auth state change:', event, session?.user?.id);
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Check if this is a new signup based on metadata
+          const isNewSignup = session.user.user_metadata?.accountType === 'client' &&
+                            !session.user.last_sign_in_at;
+          
+          await checkClientAuth(session.user.id, isNewSignup);
+        } else if (!session) {
+          setIsClientAccount(false);
+        }
+        
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const signUp = async (
     email: string, 
@@ -89,14 +125,27 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     contactFirstName: string, 
     contactLastName: string
   ) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
     try {
+      // First check if email exists as a client
+      const { data: existingClient } = await supabase
+        .rpc('check_email_exists_for_account_type', {
+          email_param: email,
+          account_type_param: 'client'
+        });
+
+      if (existingClient) {
+        return { 
+          error: { 
+            message: 'This email is already registered as a client. Please sign in instead.' 
+          } 
+        };
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: redirectUrl,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             companyName,
             contactFirstName,
@@ -106,32 +155,20 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
-      if (!error && data.user) {
-        // Create account_type record
-        const { error: accountTypeError } = await supabase
-          .from('account_types')
-          .insert({
-            auth_user_id: data.user.id,
-            account_type: 'client'
-          });
-          
-        if (accountTypeError) {
-          console.error('Error creating account type:', accountTypeError);
+      if (error) {
+        // Handle Supabase auth errors
+        if (error.message.includes('already registered')) {
+          return { 
+            error: { 
+              message: 'This email is already in use. You can use the same email for both user and client accounts - please continue with sign up.' 
+            } 
+          };
         }
-
-        // Generate email confirmation token for enhanced tracking
-        if (!data.user.email_confirmed_at) {
-          try {
-            await supabase.rpc('generate_client_email_confirmation_token', {
-              user_id_param: data.user.id
-            });
-          } catch (tokenError) {
-            console.error('Error generating confirmation token:', tokenError);
-          }
-        }
+        return { error };
       }
 
-      return { error };
+      // The trigger will handle creating the account type and profile
+      return { error: null };
     } catch (error) {
       console.error('Sign up error:', error);
       return { error };
@@ -140,11 +177,27 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
-      return { error };
+      
+      if (error) return { error };
+
+      // After successful sign in, check if they have a client account
+      if (data.user) {
+        const isClient = await checkClientAuth(data.user.id);
+        if (!isClient) {
+          // They don't have a client account, the checkClientAuth will redirect
+          return { 
+            error: { 
+              message: 'No client account found. Redirecting to user portal...' 
+            } 
+          };
+        }
+      }
+
+      return { error: null };
     } catch (error) {
       console.error('Sign in error:', error);
       return { error };
@@ -155,6 +208,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     try {
       await supabase.auth.signOut();
       setIsClientAccount(false);
+      navigate('/');
     } catch (error) {
       console.error('Sign out error:', error);
     }

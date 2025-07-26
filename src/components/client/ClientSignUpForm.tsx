@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 
 export function ClientSignUpForm() {
   const { signUp } = useClientAuth();
@@ -24,9 +24,28 @@ export function ClientSignUpForm() {
     setError('');
   };
 
-  const handleGoogleSignUp = () => {
-    // TODO: Implement Google OAuth
-    console.log('Google sign up clicked');
+  const handleGoogleSignUp = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
+
+      if (error) {
+        setError('Failed to authenticate with Google');
+      }
+    } catch (error) {
+      setError('An unexpected error occurred with Google authentication');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
