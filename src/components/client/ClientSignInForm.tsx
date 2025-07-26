@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 
-export function ClientSignInForm() {
+interface ClientSignInFormProps {
+  onForgotPassword?: () => void;
+}
+
+export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
   const { signIn } = useClientAuth();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -123,6 +128,7 @@ export function ClientSignInForm() {
           type="button"
           variant="link"
           className="p-0 h-auto text-sm text-primary hover:underline"
+          onClick={onForgotPassword}
         >
           Forgot password?
         </Button>
