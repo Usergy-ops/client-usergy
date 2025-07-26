@@ -3,6 +3,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */
@@ -94,13 +96,38 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground font-inter;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    @apply bg-background text-foreground;
+  }
+
+  /* Usergy Component Classes */
+  .glass-card {
+    @apply rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm shadow-lg;
+  }
+
+  .usergy-input {
+    @apply flex h-12 w-full rounded-xl border border-input bg-background/60 backdrop-blur-sm px-4 py-3 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-300;
+  }
+
+  .usergy-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl px-6 py-3 text-sm font-semibold text-white transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    background: linear-gradient(135deg, hsl(198, 100%, 49%), hsl(220, 100%, 46%));
+    box-shadow: 0 8px 30px -12px hsl(198, 100%, 49% / 0.25);
+  }
+
+  .usergy-btn-primary:hover {
+    @apply scale-[1.02];
+    box-shadow: 0 0 40px hsl(198, 100%, 49% / 0.15);
+  }
+
+  .usergy-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-border bg-background/60 backdrop-blur-sm px-6 py-3 text-sm font-semibold transition-all duration-300 hover:bg-accent hover:text-accent-foreground hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
   }
 }
 
 @layer utilities {
   .gradient-text {
-    background: linear-gradient(135deg, hsl(262 83% 58%), hsl(220 83% 58%));
+    background: linear-gradient(135deg, hsl(198, 100%, 49%), hsl(220, 100%, 46%));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
