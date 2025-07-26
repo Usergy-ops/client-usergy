@@ -35,6 +35,72 @@ export type Database = {
         }
         Relationships: []
       }
+      client_email_confirmations: {
+        Row: {
+          confirmed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          ip_address: unknown | null
+          token: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          ip_address?: unknown | null
+          token: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          ip_address?: unknown | null
+          token?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      client_password_resets: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          ip_address: unknown | null
+          token: string
+          used_at: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          ip_address?: unknown | null
+          token: string
+          used_at?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          ip_address?: unknown | null
+          token?: string
+          used_at?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       consolidated_social_presence: {
         Row: {
           additional_links: string[] | null
@@ -542,6 +608,20 @@ export type Database = {
       cleanup_rate_limits: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      generate_client_email_confirmation_token: {
+        Args: { user_id_param: string }
+        Returns: {
+          token: string
+          expires_at: string
+        }[]
+      }
+      generate_client_password_reset_token: {
+        Args: { user_email: string }
+        Returns: {
+          token: string
+          expires_at: string
+        }[]
       }
       validate_password_requirements: {
         Args: { password_hash: string }

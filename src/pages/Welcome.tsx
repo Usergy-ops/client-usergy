@@ -1,15 +1,21 @@
+
 import { useState } from 'react';
 import { ClientSignUpForm } from '@/components/client/ClientSignUpForm';
 import { ClientSignInForm } from '@/components/client/ClientSignInForm';
+import { ClientPasswordResetForm } from '@/components/client/ClientPasswordResetForm';
+import { EmailVerificationBanner } from '@/components/client/EmailVerificationBanner';
 import { cn } from '@/lib/utils';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
 
+type AuthMode = 'signup' | 'signin' | 'reset';
+
 export default function Welcome() {
-  const [authMode, setAuthMode] = useState<'signup' | 'signin'>('signup');
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">
       <NetworkNodes />
+      <EmailVerificationBanner />
       
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <div className="container max-w-7xl mx-auto">
@@ -68,79 +74,91 @@ export default function Welcome() {
             <div className="animate-slide-up">
               <div className="bg-card/80 backdrop-blur-sm usergy-shadow-strong rounded-3xl p-8 lg:p-10 border border-border/50">
                 
-                {/* Tab Toggle */}
-                <div className="flex mb-8 p-1 bg-muted/30 rounded-xl backdrop-blur-sm">
-                  <button
-                    onClick={() => setAuthMode('signup')}
-                    className={cn(
-                      "flex-1 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300",
-                      authMode === 'signup'
-                        ? "bg-white text-primary shadow-md"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    Join Us
-                  </button>
-                  <button
-                    onClick={() => setAuthMode('signin')}
-                    className={cn(
-                      "flex-1 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300",
-                      authMode === 'signin'
-                        ? "bg-white text-primary shadow-md"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    Welcome Back
-                  </button>
-                </div>
+                {/* Tab Toggle - Only show for signup/signin modes */}
+                {authMode !== 'reset' && (
+                  <div className="flex mb-8 p-1 bg-muted/30 rounded-xl backdrop-blur-sm">
+                    <button
+                      onClick={() => setAuthMode('signup')}
+                      className={cn(
+                        "flex-1 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300",
+                        authMode === 'signup'
+                          ? "bg-white text-primary shadow-md"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      Join Us
+                    </button>
+                    <button
+                      onClick={() => setAuthMode('signin')}
+                      className={cn(
+                        "flex-1 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300",
+                        authMode === 'signin'
+                          ? "bg-white text-primary shadow-md"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      Welcome Back
+                    </button>
+                  </div>
+                )}
 
                 {/* Form Header */}
                 <div className="mb-8 text-center">
                   <h2 className="text-2xl lg:text-3xl font-bold text-foreground mb-2">
                     {authMode === 'signup' 
                       ? 'Start your journey to product excellence' 
-                      : 'Welcome back to your command center'}
+                      : authMode === 'signin'
+                      ? 'Welcome back to your command center'
+                      : 'Reset your password'}
                   </h2>
                   <p className="text-muted-foreground">
                     {authMode === 'signup' 
                       ? 'Join leading companies who trust Usergy for product validation' 
-                      : 'Continue building products users love'}
+                      : authMode === 'signin'
+                      ? 'Continue building products users love'
+                      : 'Enter your email to receive reset instructions'}
                   </p>
                 </div>
 
                 {/* Form Content */}
                 <div className="space-y-6">
-                  {authMode === 'signup' ? (
+                  {authMode === 'signup' && (
                     <ClientSignUpForm />
-                  ) : (
-                    <ClientSignInForm />
+                  )}
+                  {authMode === 'signin' && (
+                    <ClientSignInForm onForgotPassword={() => setAuthMode('reset')} />
+                  )}
+                  {authMode === 'reset' && (
+                    <ClientPasswordResetForm onBack={() => setAuthMode('signin')} />
                   )}
                 </div>
 
-                {/* Footer */}
-                <div className="mt-8 text-center text-xs text-muted-foreground">
-                  {authMode === 'signup' ? (
-                    <>
-                      Already part of our community?{' '}
-                      <button 
-                        onClick={() => setAuthMode('signin')}
-                        className="text-primary hover:underline font-medium"
-                      >
-                        Welcome back
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      New to Usergy?{' '}
-                      <button 
-                        onClick={() => setAuthMode('signup')}
-                        className="text-primary hover:underline font-medium"
-                      >
-                        Start your journey
-                      </button>
-                    </>
-                  )}
-                </div>
+                {/* Footer - Only show for signup/signin modes */}
+                {authMode !== 'reset' && (
+                  <div className="mt-8 text-center text-xs text-muted-foreground">
+                    {authMode === 'signup' ? (
+                      <>
+                        Already part of our community?{' '}
+                        <button 
+                          onClick={() => setAuthMode('signin')}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          Welcome back
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        New to Usergy?{' '}
+                        <button 
+                          onClick={() => setAuthMode('signup')}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          Start your journey
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-6 text-center text-xs text-muted-foreground">
                   <a href="#" className="hover:text-foreground transition-colors">

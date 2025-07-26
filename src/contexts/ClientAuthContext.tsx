@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -49,6 +50,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state change:', event, session?.user?.id);
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -67,6 +69,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', session?.user?.id);
       setSession(session);
       setUser(session?.user ?? null);
       
@@ -88,44 +91,73 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   ) => {
     const redirectUrl = `${window.location.origin}/`;
     
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          companyName,
-          contactFirstName,
-          contactLastName,
-          accountType: 'client'
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            companyName,
+            contactFirstName,
+            contactLastName,
+            accountType: 'client'
+          }
+        }
+      });
+
+      if (!error && data.user) {
+        // Create account_type record
+        const { error: accountTypeError } = await supabase
+          .from('account_types')
+          .insert({
+            auth_user_id: data.user.id,
+            account_type: 'client'
+          });
+          
+        if (accountTypeError) {
+          console.error('Error creating account type:', accountTypeError);
+        }
+
+        // Generate email confirmation token for enhanced tracking
+        if (!data.user.email_confirmed_at) {
+          try {
+            await supabase.rpc('generate_client_email_confirmation_token', {
+              user_id_param: data.user.id
+            });
+          } catch (tokenError) {
+            console.error('Error generating confirmation token:', tokenError);
+          }
         }
       }
-    });
 
-    if (!error && data.user) {
-      // Create account_type record
-      await supabase
-        .from('account_types')
-        .insert({
-          auth_user_id: data.user.id,
-          account_type: 'client'
-        });
+      return { error };
+    } catch (error) {
+      console.error('Sign up error:', error);
+      return { error };
     }
-
-    return { error };
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+      return { error };
+    } catch (error) {
+      console.error('Sign in error:', error);
+      return { error };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setIsClientAccount(false);
+    try {
+      await supabase.auth.signOut();
+      setIsClientAccount(false);
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   const value = {
