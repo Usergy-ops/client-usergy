@@ -589,6 +589,10 @@ export type Database = {
         Args: { user_uuid: string }
         Returns: number
       }
+      check_email_exists_for_account_type: {
+        Args: { email_param: string; account_type_param: string }
+        Returns: boolean
+      }
       cleanup_expired_otp: {
         Args: Record<PropertyKey, never>
         Returns: undefined
