@@ -45,7 +45,9 @@ export default function AuthCallback() {
                 return;
               }
               
-              console.log('Client account created for Google user');
+              console.log('Client account created for Google user - redirecting to dashboard');
+              navigate('/dashboard');
+              return;
             } else {
               console.log('User without client account - redirecting to user portal');
               window.location.href = 'https://user.usergy.ai';
@@ -53,28 +55,9 @@ export default function AuthCallback() {
             }
           }
 
-          // Now check for client profile completion
-          const { data: profile, error: profileError } = await supabase
-            .schema('client_workspace')
-            .from('company_profiles')
-            .select('onboarding_status')
-            .eq('auth_user_id', session.user.id)
-            .single();
-
-          if (profileError) {
-            console.error('Error checking client profile:', profileError);
-            // If profile doesn't exist, go to profile setup
-            navigate('/profile');
-            return;
-          }
-
-          if (profile?.onboarding_status === 'complete') {
-            console.log('Client profile complete - redirecting to dashboard');
-            navigate('/dashboard');
-          } else {
-            console.log('Client profile incomplete - redirecting to profile setup');
-            navigate('/profile');
-          }
+          // User has client account, redirect to dashboard
+          console.log('Client account found - redirecting to dashboard');
+          navigate('/dashboard');
           
         } catch (error) {
           console.error('Error in auth callback:', error);

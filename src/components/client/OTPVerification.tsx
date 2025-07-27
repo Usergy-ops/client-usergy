@@ -88,6 +88,12 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       });
 
       if (!edgeError && data?.success) {
+        // Handle auto sign-in if provided
+        if (data.autoSignInUrl) {
+          window.location.href = data.autoSignInUrl;
+          return;
+        }
+        
         onSuccess();
         // Check if the API response includes a redirect URL
         if (data.redirectTo) {

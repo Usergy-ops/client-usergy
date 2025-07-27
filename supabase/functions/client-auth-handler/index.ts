@@ -297,11 +297,12 @@ async function handleOTPVerification(req: Request): Promise<Response> {
     .update({ verified_at: new Date().toISOString() })
     .eq('id', otpData.id);
 
-  // Confirm the user's email
+  // Confirm the user's email and get user data
   const { data: userData } = await supabase.auth.admin.listUsers();
   const user = userData.users.find(u => u.email === email);
   
   if (user) {
+    // Confirm email
     await supabase.auth.admin.updateUserById(user.id, {
       email_confirm: true
     });
@@ -325,13 +326,34 @@ async function handleOTPVerification(req: Request): Promise<Response> {
     } catch (accountError) {
       console.error('Error in client account creation:', accountError);
     }
+
+    // Generate tokens for automatic sign-in
+    const { data: tokenData, error: tokenError } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: email,
+      options: {
+        redirectTo: `${Deno.env.get('SUPABASE_URL')?.replace('https://', 'https://').replace('.supabase.co', '.supabase.co')}/auth/v1/verify?type=magiclink&redirect_to=${encodeURIComponent(`${Deno.env.get('SITE_URL') || 'https://client.usergy.ai'}/dashboard`)}`
+      }
+    });
+
+    if (!tokenError && tokenData.properties?.action_link) {
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'Email verified successfully! Redirecting...',
+          redirectTo: '/dashboard',
+          autoSignInUrl: tokenData.properties.action_link
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      );
+    }
   }
 
   return new Response(
     JSON.stringify({ 
       success: true, 
-      message: 'Email verified successfully! Redirecting to dashboard...',
-      redirectTo: '/dashboard'
+      message: 'Email verified successfully! Please sign in to continue.',
+      redirectTo: '/?signin=true'
     }),
     { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
   );
