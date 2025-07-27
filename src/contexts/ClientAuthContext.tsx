@@ -22,9 +22,9 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
 
-  const checkClientAuth = async (userId: string): Promise<boolean> => {
+  const checkClientAuth = async (userId: string, retryCount = 0): Promise<boolean> => {
     try {
-      console.log('Checking client auth for user:', userId);
+      console.log('Checking client auth for user:', userId, 'retry:', retryCount);
       
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
@@ -32,6 +32,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       
       if (error) {
         console.error('Error checking client auth:', error);
+        
+        // Retry logic for temporary failures
+        if (retryCount < 3) {
+          console.log('Retrying client auth check...');
+          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          return checkClientAuth(userId, retryCount + 1);
+        }
+        
         setIsClientAccount(false);
         return false;
       }
@@ -41,6 +49,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       return isClient;
     } catch (error) {
       console.error('Error in checkClientAuth:', error);
+      
+      // Retry logic for network errors
+      if (retryCount < 3) {
+        console.log('Retrying client auth check due to network error...');
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return checkClientAuth(userId, retryCount + 1);
+      }
+      
       setIsClientAccount(false);
       return false;
     }
@@ -103,6 +119,8 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (event === 'SIGNED_IN' && session?.user) {
+        // Add a small delay to allow account creation to complete
+        await new Promise(resolve => setTimeout(resolve, 500));
         await checkClientAuth(session.user.id);
       } else if (event === 'SIGNED_OUT') {
         setIsClientAccount(false);

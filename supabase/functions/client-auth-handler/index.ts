@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.52.1";
 import { Resend } from "npm:resend@4.0.0";
@@ -71,11 +72,14 @@ async function handleClientSignup(req: Request): Promise<Response> {
   try {
     console.log('Starting signup process for:', email);
     
-    // Check if user already exists (faster check)
-    const { data: existingUser } = await supabase.auth.admin.listUsers();
-    const userExists = existingUser.users.some(u => u.email === email);
-    
-    if (userExists) {
+    // Check if user already exists with optimized query
+    const { data: existingUser, error: userCheckError } = await supabase
+      .from('auth.users')
+      .select('id')
+      .eq('email', email)
+      .single();
+
+    if (existingUser && !userCheckError) {
       return new Response(
         JSON.stringify({ error: 'User with this email already exists' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
@@ -178,11 +182,11 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       .update({ verified_at: new Date().toISOString() })
       .eq('id', otpData.id);
 
-    // Get user and confirm email
-    const { data: userData } = await supabase.auth.admin.listUsers();
-    const user = userData.users.find(u => u.email === email);
+    // Get user directly from auth.users with optimized query
+    const { data: { user }, error: userError } = await supabase.auth.admin.getUserByEmail(email);
     
-    if (!user) {
+    if (userError || !user) {
+      console.error('User not found:', userError);
       return new Response(
         JSON.stringify({ error: 'User not found' }),
         { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
@@ -198,18 +202,38 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       }
     });
 
-    // Ensure client account records exist using the RPC function
-    try {
-      await supabase.rpc('create_client_account_for_user', {
-        user_id_param: user.id,
-        company_name_param: user.user_metadata?.companyName || 'My Company',
-        first_name_param: user.user_metadata?.contactFirstName || '',
-        last_name_param: user.user_metadata?.contactLastName || ''
-      });
-      console.log('Client account records ensured for user:', user.id);
-    } catch (accountError) {
-      console.error('Error ensuring client account records:', accountError);
-      // Log but don't fail the verification
+    // Create client account records with retry logic
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
+          user_id_param: user.id,
+          company_name_param: user.user_metadata?.companyName || 'My Company',
+          first_name_param: user.user_metadata?.contactFirstName || '',
+          last_name_param: user.user_metadata?.contactLastName || ''
+        });
+
+        if (createError) {
+          throw createError;
+        }
+
+        console.log('Client account created successfully for user:', user.id);
+        break;
+      } catch (accountError) {
+        retryCount++;
+        console.error(`Attempt ${retryCount} failed to create client account:`, accountError);
+        
+        if (retryCount >= maxRetries) {
+          console.error('Max retries reached for account creation');
+          // Continue with verification success even if account creation fails
+          break;
+        }
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
     }
 
     console.log('OTP verification successful for:', email);
@@ -218,6 +242,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       JSON.stringify({ 
         success: true, 
         message: 'Email verified successfully!',
+        userId: user.id,
         redirectTo: '/dashboard'
       }),
       { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
@@ -263,9 +288,8 @@ async function handleResendOTP(req: Request): Promise<Response> {
       );
     }
 
-    // Get user name
-    const { data: userData } = await supabase.auth.admin.listUsers();
-    const user = userData.users.find(u => u.email === email);
+    // Get user name with optimized query
+    const { data: { user } } = await supabase.auth.admin.getUserByEmail(email);
     const firstName = user?.user_metadata?.contactFirstName || 'there';
 
     // Send email asynchronously

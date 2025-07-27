@@ -19,31 +19,51 @@ export default function AuthCallback() {
         if (sessionError || !session) {
           console.error('No session found:', sessionError);
           setError('Authentication failed. Please try again.');
-          setTimeout(() => navigate('/'), 3000);
+          setTimeout(() => navigate('/', { replace: true }), 3000);
           return;
         }
 
         console.log('Session found, creating client account...');
         setStatus('Setting up your account...');
         
-        // Use the RPC function to create the client account
-        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
-          user_id_param: session.user.id,
-          company_name_param: session.user.user_metadata?.companyName || 'My Company',
-          first_name_param: session.user.user_metadata?.contactFirstName || 
-            session.user.user_metadata?.full_name?.split(' ')[0] || '',
-          last_name_param: session.user.user_metadata?.contactLastName || 
-            session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
-        });
+        // Use the RPC function to create the client account with retry logic
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
+              user_id_param: session.user.id,
+              company_name_param: session.user.user_metadata?.companyName || 'My Company',
+              first_name_param: session.user.user_metadata?.contactFirstName || 
+                session.user.user_metadata?.full_name?.split(' ')[0] || '',
+              last_name_param: session.user.user_metadata?.contactLastName || 
+                session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+            });
 
-        if (createError) {
-          console.error('Error creating client account:', createError);
-          setError('Account setup failed. Please try again.');
-          setTimeout(() => navigate('/'), 3000);
-          return;
+            if (createError) {
+              throw createError;
+            }
+
+            console.log('Client account created successfully');
+            break;
+          } catch (accountError) {
+            retryCount++;
+            console.error(`Account creation attempt ${retryCount} failed:`, accountError);
+            
+            if (retryCount >= maxRetries) {
+              console.error('Max retries reached for account creation');
+              setError('Account setup failed. Please try again.');
+              setTimeout(() => navigate('/', { replace: true }), 3000);
+              return;
+            }
+            
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          }
         }
 
-        console.log('Client account created successfully');
+        console.log('Account setup complete');
         setStatus('Account created! Redirecting...');
         
         // Refresh session to ensure the new account data is loaded
@@ -52,12 +72,12 @@ export default function AuthCallback() {
         // Small delay to ensure everything is set up
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        navigate('/dashboard');
+        navigate('/dashboard', { replace: true });
         
       } catch (error) {
         console.error('Auth callback error:', error);
         setError('An unexpected error occurred. Please try again.');
-        setTimeout(() => navigate('/'), 3000);
+        setTimeout(() => navigate('/', { replace: true }), 3000);
       }
     };
 

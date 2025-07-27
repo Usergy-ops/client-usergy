@@ -7,6 +7,7 @@ import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface OTPVerificationProps {
   email: string;
@@ -21,6 +22,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [resendLoading, setResendLoading] = useState(false);
   const { toast } = useToast();
   const { refreshSession } = useClientAuth();
+  const navigate = useNavigate();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,9 +66,9 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         
         onSuccess();
         
-        // Redirect to dashboard
-        console.log('Redirecting to dashboard...');
-        window.location.href = '/dashboard';
+        // Use React Router navigation instead of window.location
+        console.log('Navigating to dashboard...');
+        navigate('/dashboard', { replace: true });
         
       } else {
         console.error('OTP verification failed:', data);
