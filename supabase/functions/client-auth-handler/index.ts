@@ -117,10 +117,10 @@ async function handleClientSignup(req: Request): Promise<Response> {
     console.error('OTP storage error:', otpError);
   }
 
-  // Send OTP email
+// Send OTP email with improved error handling
   try {
-    await resend.emails.send({
-      from: 'Usergy Client Portal <noreply@usergy.ai>',
+    const emailResult = await resend.emails.send({
+      from: 'Usergy Client Portal <client@user.usergy.ai>',
       to: [email],
       subject: 'Welcome to Usergy - Verify Your Email',
       html: `
@@ -196,9 +196,47 @@ async function handleClientSignup(req: Request): Promise<Response> {
         </html>
       `
     });
+
+    console.log('Email sent successfully:', emailResult);
+    
+    // Log successful email delivery
+    await supabase.from('error_logs').insert({
+      error_type: 'info',
+      error_message: 'OTP email sent successfully',
+      context: 'client_signup_email',
+      user_id: authData.user.id,
+      metadata: {
+        email,
+        email_id: emailResult.data?.id,
+        company_name: companyName
+      }
+    });
+
   } catch (emailError) {
     console.error('Email sending error:', emailError);
-    // Don't fail the signup if email fails
+    
+    // Log email delivery failure
+    await supabase.from('error_logs').insert({
+      error_type: 'email_delivery_error',
+      error_message: emailError.message,
+      context: 'client_signup_email',
+      user_id: authData.user.id,
+      metadata: {
+        email,
+        company_name: companyName,
+        error_detail: emailError
+      }
+    });
+    
+    // Don't fail the signup if email fails, but inform the user
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        userId: authData.user.id,
+        warning: 'Account created but email delivery failed. Please contact support for verification assistance.' 
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+    );
   }
 
   return new Response(
@@ -291,10 +329,10 @@ async function handleResendOTP(req: Request): Promise<Response> {
   const user = userData.users.find(u => u.email === email);
   const firstName = user?.user_metadata?.first_name || 'there';
 
-  // Send new OTP email
+  // Send new OTP email with improved error handling
   try {
-    await resend.emails.send({
-      from: 'Usergy Client Portal <noreply@usergy.ai>',
+    const emailResult = await resend.emails.send({
+      from: 'Usergy Client Portal <client@user.usergy.ai>',
       to: [email],
       subject: 'New Verification Code - Usergy Client Portal',
       html: `
@@ -366,10 +404,36 @@ async function handleResendOTP(req: Request): Promise<Response> {
         </html>
       `
     });
+
+    console.log('Resend email sent successfully:', emailResult);
+    
+    // Log successful email delivery
+    await supabase.from('error_logs').insert({
+      error_type: 'info',
+      error_message: 'OTP resend email sent successfully',
+      context: 'otp_resend_email',
+      metadata: {
+        email,
+        email_id: emailResult.data?.id
+      }
+    });
+
   } catch (emailError) {
     console.error('Email sending error:', emailError);
+    
+    // Log email delivery failure
+    await supabase.from('error_logs').insert({
+      error_type: 'email_delivery_error',
+      error_message: emailError.message,
+      context: 'otp_resend_email',
+      metadata: {
+        email,
+        error_detail: emailError
+      }
+    });
+    
     return new Response(
-      JSON.stringify({ error: 'Failed to send verification email' }),
+      JSON.stringify({ error: 'Failed to send verification email. Please try again or contact support.' }),
       { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
   }
