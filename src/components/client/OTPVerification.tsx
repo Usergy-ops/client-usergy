@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { useNavigate } from 'react-router-dom';
 
 interface OTPVerificationProps {
   email: string;
@@ -19,6 +20,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [otpCode, setOtpCode] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,21 +43,36 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         }
       });
 
-      if (error || !data?.success) {
-        console.error('OTP verification failed:', error || data);
+      console.log('OTP verification response:', { data, error });
+
+      if (error) {
+        console.error('OTP verification failed:', error);
         setError('Invalid verification code. Please try again.');
         return;
       }
 
-      console.log('OTP verification successful');
-      
-      toast({
-        title: "Email verified successfully!",
-        description: "Welcome to Usergy Client Portal.",
-      });
-      
-      onSuccess();
-      
+      if (data && data.success) {
+        console.log('OTP verification successful, redirecting to dashboard');
+        
+        toast({
+          title: "Email verified successfully!",
+          description: "Welcome to Usergy Client Portal.",
+        });
+        
+        onSuccess();
+        
+        // If there's an auto sign-in URL, use it, otherwise redirect to dashboard
+        if (data.autoSignInUrl) {
+          console.log('Using auto sign-in URL');
+          window.location.href = data.autoSignInUrl;
+        } else {
+          console.log('Redirecting to dashboard');
+          navigate('/dashboard');
+        }
+      } else {
+        console.error('OTP verification failed:', data);
+        setError(data?.error || 'Invalid verification code. Please try again.');
+      }
     } catch (error) {
       console.error('OTP verification exception:', error);
       setError('An error occurred. Please try again.');
@@ -69,18 +86,24 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setError('');
     
     try {
-      const { error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
+      console.log('Resending OTP for:', email);
+      
+      const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
       });
+
+      console.log('Resend OTP response:', { data, error });
 
       if (error) {
         console.error('Resend OTP error:', error);
         setError('Failed to resend verification code. Please try again.');
-      } else {
+      } else if (data && data.success) {
         toast({
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
         });
+      } else {
+        setError('Failed to resend verification code. Please try again.');
       }
     } catch (error) {
       console.error('Resend OTP exception:', error);

@@ -10,7 +10,7 @@ import { OTPVerification } from './OTPVerification';
 import { useToast } from '@/hooks/use-toast';
 
 export function ClientSignUpForm() {
-  const { signUp } = useClientAuth();
+  const { signInWithGoogle } = useClientAuth();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -34,12 +34,7 @@ export function ClientSignUpForm() {
       setLoading(true);
       setError('');
       
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        }
-      });
+      const { error } = await signInWithGoogle();
 
       if (error) {
         console.error('Google OAuth error:', error);
@@ -70,13 +65,19 @@ export function ClientSignUpForm() {
       setLoading(true);
       setError('');
       
-      const { error } = await signUp(
-        formData.email,
-        formData.password,
-        formData.companyName,
-        formData.contactFirstName,
-        formData.contactLastName
-      );
+      console.log('Starting client signup process...');
+      
+      const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
+        body: {
+          email: formData.email,
+          password: formData.password,
+          companyName: formData.companyName,
+          firstName: formData.contactFirstName,
+          lastName: formData.contactLastName
+        }
+      });
+
+      console.log('Signup response:', { data, error });
 
       if (error) {
         console.error('Signup error:', error);
@@ -84,11 +85,17 @@ export function ClientSignUpForm() {
         return;
       }
 
-      setShowOTPVerification(true);
-      toast({
-        title: "Check your email!",
-        description: "We've sent you a verification code to complete your registration.",
-      });
+      if (data && data.success) {
+        console.log('Signup successful, showing OTP verification');
+        setShowOTPVerification(true);
+        toast({
+          title: "Check your email!",
+          description: "We've sent you a verification code to complete your registration.",
+        });
+      } else {
+        console.error('Signup failed:', data);
+        setError(data?.error || 'Failed to create account. Please try again.');
+      }
     } catch (error) {
       console.error('Signup exception:', error);
       setError('An unexpected error occurred. Please try again.');
@@ -98,13 +105,16 @@ export function ClientSignUpForm() {
   };
 
   const handleOTPSuccess = () => {
+    console.log('OTP verification successful');
     toast({
       title: "Welcome to Usergy!",
       description: "Your account has been created successfully.",
     });
+    // The OTP verification component should handle redirection
   };
 
   const handleBackToSignup = () => {
+    console.log('Back to signup form');
     setShowOTPVerification(false);
     setLoading(false);
   };

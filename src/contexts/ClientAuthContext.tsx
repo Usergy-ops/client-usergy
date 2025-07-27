@@ -8,7 +8,6 @@ interface ClientAuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, companyName: string, contactFirstName: string, contactLastName: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signInWithGoogle: () => Promise<{ error: any }>;
   signOut: () => Promise<void>;
@@ -135,36 +134,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [navigate]);
 
-  const signUp = async (
-    email: string, 
-    password: string, 
-    companyName: string, 
-    contactFirstName: string, 
-    contactLastName: string
-  ) => {
-    try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
-        body: {
-          email,
-          password,
-          companyName,
-          firstName: contactFirstName,
-          lastName: contactLastName
-        }
-      });
-
-      if (error) {
-        console.error('Signup error:', error);
-        return { error };
-      }
-
-      return { error: null };
-    } catch (error) {
-      console.error('Signup exception:', error);
-      return { error };
-    }
-  };
-
   const signIn = async (email: string, password: string) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -219,7 +188,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     user,
     session,
     loading,
-    signUp,
     signIn,
     signInWithGoogle,
     signOut,
