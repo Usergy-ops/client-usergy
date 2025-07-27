@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.52.1";
 import { Resend } from "npm:resend@4.0.0";
@@ -30,6 +31,14 @@ interface ClientOTPVerificationRequest {
 interface ClientResendOTPRequest {
   email: string;
 }
+
+const getProductionDomain = () => {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  if (supabaseUrl?.includes('lnsyrmpucmllakuuiixe.supabase.co')) {
+    return 'https://client.usergy.ai';
+  }
+  return 'http://localhost:3000';
+};
 
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
@@ -307,12 +316,15 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       email_confirm: true
     });
 
+    // Use the correct production domain for redirect
+    const redirectUrl = `${getProductionDomain()}/dashboard`;
+    
     // Generate tokens for automatic sign-in
     const { data: tokenData, error: tokenError } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email: email,
       options: {
-        redirectTo: `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '')}.vercel.app/dashboard`
+        redirectTo: redirectUrl
       }
     });
 

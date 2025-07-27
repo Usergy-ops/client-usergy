@@ -93,6 +93,23 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_IN' && session?.user) {
           console.log('User signed in, checking client status...');
           
+          // For Google OAuth users, we need to ensure they have a client account
+          if (session.user.app_metadata?.provider === 'google') {
+            console.log('Google OAuth user detected, ensuring client account...');
+            
+            // Try to create client account if it doesn't exist
+            const { error: createError } = await supabase.rpc('create_client_account_for_user', {
+              user_id_param: session.user.id,
+              company_name_param: 'My Company',
+              first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+              last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+            });
+            
+            if (createError) {
+              console.error('Error creating client account:', createError);
+            }
+          }
+          
           // Give time for database triggers to complete
           await new Promise(resolve => setTimeout(resolve, 2000));
           

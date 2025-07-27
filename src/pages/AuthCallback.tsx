@@ -26,6 +26,23 @@ export default function AuthCallback() {
         console.log('Session found for user:', session.user.id);
         setStatus('Setting up your account...');
         
+        // For Google OAuth users, ensure they have a client account
+        if (session.user.app_metadata?.provider === 'google') {
+          console.log('Google OAuth user detected, ensuring client account...');
+          
+          // Try to create client account if it doesn't exist
+          const { error: createError } = await supabase.rpc('create_client_account_for_user', {
+            user_id_param: session.user.id,
+            company_name_param: 'My Company',
+            first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+            last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+          });
+          
+          if (createError) {
+            console.error('Error creating client account:', createError);
+          }
+        }
+        
         // Give time for database triggers to complete
         await new Promise(resolve => setTimeout(resolve, 2000));
         
@@ -47,9 +64,23 @@ export default function AuthCallback() {
           console.log('User is a client, redirecting to dashboard');
           navigate('/dashboard');
         } else {
-          console.log('User is not a client, this should not happen in simplified flow');
-          setError('Account setup failed. Please try again.');
-          setTimeout(() => navigate('/'), 3000);
+          console.log('User is not a client, creating account...');
+          // Try one more time to create client account
+          const { error: retryError } = await supabase.rpc('create_client_account_for_user', {
+            user_id_param: session.user.id,
+            company_name_param: 'My Company',
+            first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+            last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+          });
+          
+          if (retryError) {
+            console.error('Retry error:', retryError);
+            setError('Account setup failed. Please try again.');
+            setTimeout(() => navigate('/'), 3000);
+          } else {
+            console.log('Client account created successfully, redirecting to dashboard');
+            navigate('/dashboard');
+          }
         }
         
       } catch (error) {
