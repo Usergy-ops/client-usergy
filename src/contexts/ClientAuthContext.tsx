@@ -45,54 +45,50 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Check initial session
+    let mounted = true;
+
     const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (session?.user) {
+        if (error) {
+          console.error('Error getting session:', error);
+        } else if (session?.user && mounted) {
           console.log('Initial session found:', session.user.id);
           setSession(session);
           setUser(session.user);
-          
-          // Check if user is a client
-          const isClient = await checkClientAuth(session.user.id);
-          console.log('Is client account:', isClient);
-          
-          // Don't redirect here - let components handle their own routing
-        } else {
-          console.log('No initial session found');
+          await checkClientAuth(session.user.id);
         }
-        
-        setLoading(false);
       } catch (error) {
         console.error('Error initializing auth:', error);
-        setLoading(false);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     initializeAuth();
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      
       console.log('Auth state change:', event, session?.user?.id);
       
       setSession(session);
       setUser(session?.user ?? null);
       
       if (event === 'SIGNED_IN' && session?.user) {
-        // Check if user is a client
-        const isClient = await checkClientAuth(session.user.id);
-        console.log('User signed in, is client:', isClient);
-        
-        // Don't redirect here - let components handle their own routing
+        await checkClientAuth(session.user.id);
       } else if (event === 'SIGNED_OUT') {
-        console.log('User signed out');
         setIsClientAccount(false);
       }
+      
+      setLoading(false);
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -141,7 +137,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     try {
       await supabase.auth.signOut();
       setIsClientAccount(false);
-      // Redirect to home after sign out
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out error:', error);

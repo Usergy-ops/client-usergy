@@ -65,7 +65,7 @@ export function ClientSignUpForm() {
       setLoading(true);
       setError('');
       
-      console.log('Starting client signup process...');
+      console.log('Starting signup process...');
       
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {
@@ -89,19 +89,10 @@ export function ClientSignUpForm() {
         console.log('Signup successful, showing OTP verification');
         setShowOTPVerification(true);
         
-        // Show different messages based on email delivery status
-        if (data.message.includes('delayed')) {
-          toast({
-            title: "Account created!",
-            description: "Email delivery may be delayed. Please check your email or try resending the code.",
-            variant: "default",
-          });
-        } else {
-          toast({
-            title: "Check your email!",
-            description: "We've sent you a verification code to complete your registration.",
-          });
-        }
+        toast({
+          title: "Account created!",
+          description: "Please check your email for the verification code.",
+        });
       } else {
         console.error('Signup failed:', data);
         setError(data?.error || 'Failed to create account. Please try again.');
@@ -120,7 +111,6 @@ export function ClientSignUpForm() {
       title: "Welcome to Usergy!",
       description: "Your account has been created successfully.",
     });
-    // The OTP verification component handles redirection
   };
 
   const handleBackToSignup = () => {

@@ -32,17 +32,11 @@ interface ClientResendOTPRequest {
   email: string;
 }
 
-// Fixed production domain detection
 const getProductionDomain = () => {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  if (supabaseUrl?.includes('lnsyrmpucmllakuuiixe.supabase.co')) {
-    return 'https://client.usergy.ai';
-  }
-  return 'http://localhost:3000';
+  return 'https://client.usergy.ai';
 };
 
 const handler = async (req: Request): Promise<Response> => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -80,8 +74,10 @@ async function handleClientSignup(req: Request): Promise<Response> {
   const { email, password, companyName, firstName, lastName }: ClientSignupRequest = await req.json();
 
   try {
-    // Check if user already exists (faster query)
-    const { data: existingUser, error: checkError } = await supabase
+    console.log('Starting signup process for:', email);
+    
+    // Check if user already exists
+    const { data: existingUser } = await supabase
       .from('profiles')
       .select('user_id')
       .eq('email', email)
@@ -94,7 +90,7 @@ async function handleClientSignup(req: Request): Promise<Response> {
       );
     }
 
-    // Create user with optimized metadata
+    // Create user account
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -116,41 +112,40 @@ async function handleClientSignup(req: Request): Promise<Response> {
       );
     }
 
-    // Generate OTP
+    // Generate OTP immediately
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Store OTP and send email in parallel
-    const [otpResult, emailResult] = await Promise.allSettled([
-      supabase.from('user_otp_verification').insert({
-        email,
-        otp_code: otpCode,
-        expires_at: expiresAt.toISOString(),
-      }),
-      sendOTPEmail(email, otpCode, firstName)
-    ]);
+    console.log('Generated OTP:', otpCode, 'for user:', email);
 
-    if (otpResult.status === 'rejected') {
-      console.error('OTP storage error:', otpResult.reason);
+    // Store OTP
+    const { error: otpError } = await supabase.from('user_otp_verification').insert({
+      email,
+      otp_code: otpCode,
+      expires_at: expiresAt.toISOString(),
+    });
+
+    if (otpError) {
+      console.error('OTP storage error:', otpError);
       return new Response(
         JSON.stringify({ error: 'Failed to generate verification code' }),
         { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 
-    // Don't wait for email - respond immediately
-    const response = {
-      success: true,
-      message: 'Account created successfully. Please check your email for verification code.',
-      userId: authData.user.id
-    };
+    // Send email asynchronously (don't wait for it)
+    sendOTPEmail(email, otpCode, firstName).catch(error => {
+      console.error('Email send error:', error);
+    });
 
-    if (emailResult.status === 'rejected') {
-      response.message = 'Account created but email delivery may be delayed. Please check your email or try resending the code.';
-    }
+    console.log('Signup successful for:', email);
 
     return new Response(
-      JSON.stringify(response),
+      JSON.stringify({
+        success: true,
+        message: 'Account created successfully. Please check your email for verification code.',
+        userId: authData.user.id
+      }),
       { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );
 
@@ -167,6 +162,8 @@ async function handleOTPVerification(req: Request): Promise<Response> {
   const { email, otpCode }: ClientOTPVerificationRequest = await req.json();
 
   try {
+    console.log('Verifying OTP for:', email, 'Code:', otpCode);
+
     // Verify OTP
     const { data: otpData, error: otpError } = await supabase
       .from('user_otp_verification')
@@ -178,6 +175,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       .single();
 
     if (otpError || !otpData) {
+      console.error('OTP verification failed:', otpError);
       return new Response(
         JSON.stringify({ error: 'Invalid or expired verification code' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
@@ -210,15 +208,13 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       }
     });
 
-    // Generate direct dashboard redirect (not magic link)
-    const redirectUrl = `${getProductionDomain()}/dashboard`;
-    
+    console.log('OTP verification successful for:', email);
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: 'Email verified successfully!',
-        redirectTo: '/dashboard',
-        redirectUrl: redirectUrl
+        redirectTo: '/dashboard'
       }),
       { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
     );

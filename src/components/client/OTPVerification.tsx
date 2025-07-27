@@ -57,10 +57,9 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Welcome to Usergy Client Portal.",
         });
         
-        // Call onSuccess to trigger any necessary state updates
         onSuccess();
         
-        // Force a session refresh to ensure auth state is updated
+        // Force a session refresh
         await supabase.auth.getSession();
         
         // Redirect to dashboard
@@ -100,7 +99,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
         });
-        setOtpCode(''); // Clear the current code
+        setOtpCode('');
       } else {
         setError('Failed to resend verification code. Please try again.');
       }
