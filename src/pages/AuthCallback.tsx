@@ -7,6 +7,7 @@ import { NetworkNodes } from '@/components/client/NetworkNodes';
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>('Verifying access...');
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -21,48 +22,77 @@ export default function AuthCallback() {
         }
 
         console.log('Session found for user:', session.user.id);
+        setStatus('Setting up your account...');
         
-        // For Google OAuth users, create client account
+        // For Google OAuth users, the trigger should have already created the account
+        // But let's double-check and handle any edge cases
         const isGoogleUser = session.user.app_metadata?.provider === 'google';
         
         if (isGoogleUser) {
-          // Create account type
-          await supabase
-            .from('account_types')
-            .insert({
-              auth_user_id: session.user.id,
-              account_type: 'client'
-            })
-            .select()
-            .single();
+          console.log('Google OAuth user detected, checking account status...');
           
-          // Create or update company profile using client_workspace schema
-          await supabase
-            .from('client_workspace.company_profiles')
-            .upsert({
-              auth_user_id: session.user.id,
-              contact_first_name: session.user.user_metadata?.full_name?.split(' ')[0] || '',
-              contact_last_name: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
-              company_name: '',
-              billing_email: session.user.email || ''
-            }, {
-              onConflict: 'auth_user_id'
+          // Wait a moment for the trigger to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Check if the user is now a client
+          const { data: clientCheck } = await supabase.rpc('check_user_is_client', {
+            user_id_param: session.user.id
+          });
+          
+          console.log('Client check result:', clientCheck);
+          
+          if (!clientCheck?.is_client) {
+            console.log('User not detected as client, attempting manual creation...');
+            
+            // Extract name parts for manual creation
+            const fullName = session.user.user_metadata?.full_name || '';
+            const nameParts = fullName.split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            // Manually create the client account
+            const { data: creationResult } = await supabase.rpc('create_client_account_for_user', {
+              user_id_param: session.user.id,
+              company_name_param: 'My Company',
+              first_name_param: firstName,
+              last_name_param: lastName
             });
+            
+            console.log('Manual creation result:', creationResult);
+            
+            if (!creationResult?.success) {
+              console.error('Failed to create client account:', creationResult);
+              setError('Failed to set up your account. Please try again.');
+              setTimeout(() => navigate('/'), 3000);
+              return;
+            }
+          }
         }
         
-        // Wait for profile to be created
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        setStatus('Checking your profile...');
+        
+        // Wait for profile to be fully set up
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Check profile completion status using client_workspace schema
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('client_workspace.company_profiles')
           .select('onboarding_status')
           .eq('auth_user_id', session.user.id)
-          .single();
+          .maybeSingle();
+        
+        if (profileError) {
+          console.error('Profile check error:', profileError);
+          setError('Failed to check profile status. Please try again.');
+          setTimeout(() => navigate('/'), 3000);
+          return;
+        }
         
         if (profile?.onboarding_status === 'complete') {
+          console.log('Profile complete, redirecting to dashboard');
           navigate('/dashboard');
         } else {
+          console.log('Profile incomplete, redirecting to profile setup');
           navigate('/profile');
         }
         
@@ -88,7 +118,7 @@ export default function AuthCallback() {
         ) : (
           <>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-lg">Verifying access...</p>
+            <p className="text-lg">{status}</p>
           </>
         )}
       </div>

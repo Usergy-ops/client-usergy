@@ -14,6 +14,7 @@ interface ClientAuthContextType {
   signInWithGoogle: () => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   isClientAccount: boolean;
+  checkClientStatus: () => Promise<void>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -25,23 +26,29 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [isClientAccount, setIsClientAccount] = useState(false);
   const navigate = useNavigate();
 
-  const checkClientAuth = async (userId: string): Promise<boolean> => {
+  const checkClientAuth = async (userId: string, retryCount = 0): Promise<boolean> => {
     try {
-      console.log('Checking if user has client account:', userId);
+      console.log('Checking if user has client account:', userId, 'retry:', retryCount);
       
-      const { data: accountType, error } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', userId)
-        .eq('account_type', 'client')
-        .maybeSingle();
+      // Use the new RPC function for better reliability
+      const { data: clientCheck, error } = await supabase.rpc('check_user_is_client', {
+        user_id_param: userId
+      });
       
       if (error) {
-        console.error('Error checking account type:', error);
+        console.error('Error checking client status:', error);
+        
+        // For new Google OAuth users, retry a few times as the trigger might be processing
+        if (retryCount < 3) {
+          console.log('Retrying client check in 1 second...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return checkClientAuth(userId, retryCount + 1);
+        }
+        
         return false;
       }
       
-      const isClient = !!accountType;
+      const isClient = clientCheck?.is_client || false;
       console.log('Is client account:', isClient);
       setIsClientAccount(isClient);
       
@@ -49,6 +56,12 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error in checkClientAuth:', error);
       return false;
+    }
+  };
+
+  const checkClientStatus = async () => {
+    if (user) {
+      await checkClientAuth(user.id);
     }
   };
 
@@ -67,7 +80,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         checkClientAuth(session.user.id).then(isClient => {
           if (!mounted) return;
           
-          // Only redirect if we're on the landing page
+          // Only redirect if we're on the landing page and user is verified as client
           if (isClient && window.location.pathname === '/') {
             console.log('Client authenticated, redirecting to dashboard');
             redirectToDashboard();
@@ -88,6 +101,15 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         
         if (event === 'SIGNED_IN' && session?.user) {
+          console.log('User signed in, checking client status...');
+          
+          // For Google OAuth, give more time for the trigger to complete
+          const isGoogleUser = session.user.app_metadata?.provider === 'google';
+          if (isGoogleUser) {
+            console.log('Google OAuth user, waiting for account setup...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          
           // Check if user has client account
           const isClient = await checkClientAuth(session.user.id);
           
@@ -106,6 +128,9 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
               console.log('Profile incomplete, redirecting to profile setup');
               redirectToProfile();
             }
+          } else {
+            console.log('User is not a client, redirecting to user portal');
+            redirectToUserPortal();
           }
         } else if (event === 'SIGNED_OUT') {
           setIsClientAccount(false);
@@ -224,7 +249,8 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     signIn,
     signInWithGoogle,
     signOut,
-    isClientAccount
+    isClientAccount,
+    checkClientStatus
   };
 
   return (

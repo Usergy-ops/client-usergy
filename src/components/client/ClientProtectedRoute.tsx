@@ -1,5 +1,5 @@
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Navigate } from 'react-router-dom';
 
@@ -8,9 +8,17 @@ interface ClientProtectedRouteProps {
 }
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
-  const { user, loading, isClientAccount } = useClientAuth();
+  const { user, loading, isClientAccount, checkClientStatus } = useClientAuth();
 
   console.log('ClientProtectedRoute state:', { user: !!user, loading, isClientAccount });
+
+  // Re-check client status when component mounts if user exists but isn't detected as client
+  useEffect(() => {
+    if (user && !isClientAccount && !loading) {
+      console.log('Re-checking client status for user:', user.id);
+      checkClientStatus();
+    }
+  }, [user, isClientAccount, loading, checkClientStatus]);
 
   if (loading) {
     return (
@@ -32,7 +40,6 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
 
   if (!isClientAccount) {
     console.log('User is not a client account, showing access denied');
-    // This will trigger redirect to user.usergy.ai in the context
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="glass-card p-8 text-center">
