@@ -1,262 +1,34 @@
+// In src/components/client/OTPVerification.tsx
+// Update the handleVerify function:
 
-import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ArrowLeft } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { redirectToDashboard, redirectToSignIn, logRedirect } from '@/utils/authRedirectUtils';
-
-interface OTPVerificationProps {
-  email: string;
-  onSuccess: () => void;
-  onBack: () => void;
-}
-
-export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationProps) {
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  useEffect(() => {
-    inputRefs.current[0]?.focus();
-  }, []);
-
-  useEffect(() => {
-    if (resendCooldown > 0) {
-      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [resendCooldown]);
-
-  const handleChange = (index: number, value: string) => {
-    if (value && !/^\d$/.test(value)) return;
-
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-    setError('');
-
-    if (value && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    if (newOtp.every(digit => digit) && newOtp.length === 6) {
-      handleVerify(newOtp.join(''));
-    }
-  };
-
-  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pastedData = e.clipboardData.getData('text').slice(0, 6);
+const handleVerify = async (otpCode: string) => {
+  setLoading(true);
+  setError('');
+  
+  try {
+    console.log('Verifying OTP for:', email);
     
-    if (/^\d+$/.test(pastedData)) {
-      const newOtp = [...otp];
-      pastedData.split('').forEach((digit, index) => {
-        if (index < 6) newOtp[index] = digit;
-      });
-      setOtp(newOtp);
-      
-      if (pastedData.length === 6) {
-        handleVerify(pastedData);
-      }
-    }
-  };
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: otpCode,
+      type: 'email',
+    });
 
-  const handleVerify = async (otpCode: string) => {
-    setLoading(true);
-    setError('');
-    
-    try {
-      console.log('Starting OTP verification for:', email);
-      
-      // Try the edge function first
-      const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: {
-          email,
-          otpCode
-        }
-      });
-
-      console.log('Edge function OTP verification response:', data, edgeError);
-
-      if (!edgeError && data?.success) {
-        console.log('OTP verification successful via edge function');
-        
-        // Handle auto sign-in if provided
-        if (data.autoSignInUrl) {
-          console.log('Auto sign-in URL provided:', data.autoSignInUrl);
-          logRedirect('Auto sign-in URL provided', data.autoSignInUrl, { email });
-          window.location.href = data.autoSignInUrl;
-          return;
-        }
-        
-        // Success without auto sign-in - redirect to sign in
-        console.log('OTP verified, redirecting to sign in');
-        logRedirect('OTP verified successfully', 'sign in page', { email });
-        onSuccess();
-        
-        // Add a small delay to ensure the state is updated
-        setTimeout(() => {
-          redirectToSignIn();
-        }, 500);
-        return;
-      }
-
-      // If edge function fails, fallback to standard OTP verification
-      console.log('Falling back to standard OTP verification');
-      
-      const { data: otpData, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otpCode,
-        type: 'email',
-      });
-
-      if (error) {
-        console.error('OTP verification error:', error);
-        setError('Invalid verification code. Please try again.');
-        setLoading(false);
-        return;
-      }
-
-      console.log('OTP verification successful via fallback');
-      onSuccess();
-      
-      // Wait for auth state to update then redirect
-      setTimeout(() => {
-        logRedirect('OTP verified via fallback', 'dashboard', { email });
-        redirectToDashboard();
-      }, 1000);
-      
-    } catch (error) {
+    if (error) {
       console.error('OTP verification error:', error);
-      setError('An error occurred. Please try again.');
+      setError('Invalid verification code. Please try again.');
       setLoading(false);
+      return;
     }
-  };
 
-  const handleResend = async () => {
-    if (resendCooldown > 0) return;
+    console.log('OTP verification successful');
+    onSuccess();
     
-    setLoading(true);
-    setError('');
+    // The auth state change in context will handle redirect
     
-    try {
-      console.log('Resending OTP for:', email);
-      
-      // Try the edge function first
-      const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
-        body: { email }
-      });
-
-      console.log('Edge function resend response:', data, edgeError);
-
-      if (!edgeError && data?.success) {
-        console.log('OTP resend successful via edge function');
-        setResendCooldown(60);
-        setOtp(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
-        setLoading(false);
-        return;
-      }
-
-      // Fallback to standard resend
-      console.log('Falling back to standard resend');
-      
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email,
-      });
-
-      if (error) {
-        console.error('Resend error:', error);
-        setError('Failed to resend code. Please try again.');
-      } else {
-        console.log('OTP resend successful via fallback');
-        setResendCooldown(60);
-        setOtp(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
-      }
-    } catch (error) {
-      console.error('Resend error:', error);
-      setError('An error occurred. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <button
-        onClick={onBack}
-        className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4 mr-2" />
-        Back to sign up
-      </button>
-
-      <div className="text-center space-y-2">
-        <h3 className="text-2xl font-bold">Check your email</h3>
-        <p className="text-muted-foreground">
-          We've sent a verification code to<br />
-          <span className="font-medium text-foreground">{email}</span>
-        </p>
-      </div>
-
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
-
-      <div className="flex justify-center gap-2">
-        {otp.map((digit, index) => (
-          <Input
-            key={index}
-            ref={el => inputRefs.current[index] = el}
-            type="text"
-            maxLength={1}
-            value={digit}
-            onChange={(e) => handleChange(index, e.target.value)}
-            onKeyDown={(e) => handleKeyDown(index, e)}
-            onPaste={index === 0 ? handlePaste : undefined}
-            className="w-12 h-12 text-center text-lg font-semibold"
-            disabled={loading}
-          />
-        ))}
-      </div>
-
-      <div className="text-center">
-        <p className="text-sm text-muted-foreground">
-          Didn't receive the code?{' '}
-          {resendCooldown > 0 ? (
-            <span className="font-medium">Resend in {resendCooldown}s</span>
-          ) : (
-            <button
-              onClick={handleResend}
-              disabled={loading}
-              className="font-medium text-primary hover:underline"
-            >
-              Resend code
-            </button>
-          )}
-        </p>
-      </div>
-
-      <Button
-        onClick={() => handleVerify(otp.join(''))}
-        disabled={loading || otp.some(digit => !digit)}
-        className="w-full"
-      >
-        {loading ? 'Verifying...' : 'Verify Email'}
-      </Button>
-    </div>
-  );
-}
+  } catch (error) {
+    console.error('OTP verification exception:', error);
+    setError('An error occurred. Please try again.');
+    setLoading(false);
+  }
+};
