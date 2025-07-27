@@ -1,17 +1,21 @@
+// src/utils/authRedirectUtils.ts
 /**
  * Centralized authentication redirect utilities
  * Provides consistent redirect behavior across all auth components
  */
 
-const PRODUCTION_URL = 'https://client.usergy.ai';
+const getBaseUrl = () => {
+  // Use current origin for all environments
+  return window.location.origin;
+};
 
 /**
- * Redirects to dashboard with absolute URL
- * Uses window.location.href for full page reload to ensure clean state
+ * Redirects to dashboard
  */
 export function redirectToDashboard(): void {
   console.log('Redirecting to dashboard');
-  window.location.href = `${PRODUCTION_URL}/dashboard`;
+  const baseUrl = getBaseUrl();
+  window.location.href = `${baseUrl}/dashboard`;
 }
 
 /**
@@ -19,7 +23,8 @@ export function redirectToDashboard(): void {
  */
 export function redirectToSignIn(): void {
   console.log('Redirecting to sign in');
-  window.location.href = `${PRODUCTION_URL}/?signin=true`;
+  const baseUrl = getBaseUrl();
+  window.location.href = `${baseUrl}/?signin=true`;
 }
 
 /**
@@ -27,7 +32,13 @@ export function redirectToSignIn(): void {
  */
 export function redirectToUserPortal(): void {
   console.log('Redirecting to user portal');
-  window.location.href = 'https://user.usergy.ai';
+  // Only use external URL for production
+  if (window.location.hostname === 'client.usergy.ai') {
+    window.location.href = 'https://user.usergy.ai';
+  } else {
+    // In development, just go to home
+    window.location.href = '/';
+  }
 }
 
 /**
@@ -35,7 +46,8 @@ export function redirectToUserPortal(): void {
  */
 export function redirectToProfile(): void {
   console.log('Redirecting to profile setup');
-  window.location.href = `${PRODUCTION_URL}/profile`;
+  const baseUrl = getBaseUrl();
+  window.location.href = `${baseUrl}/profile`;
 }
 
 /**
