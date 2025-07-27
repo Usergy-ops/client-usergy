@@ -57,20 +57,16 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Welcome to Usergy Client Portal.",
         });
         
-        // Call onSuccess to trigger auth context refresh
+        // Call onSuccess to trigger any necessary state updates
         onSuccess();
         
-        // Redirect to dashboard using the production URL
-        const redirectUrl = data.redirectUrl || '/dashboard';
-        console.log('Redirecting to:', redirectUrl);
+        // Force a session refresh to ensure auth state is updated
+        await supabase.auth.getSession();
         
-        // Use window.location.href for production redirect
-        if (redirectUrl.includes('client.usergy.ai')) {
-          window.location.href = redirectUrl;
-        } else {
-          // For local development, use navigate
-          window.location.href = redirectUrl;
-        }
+        // Redirect to dashboard
+        console.log('Redirecting to dashboard...');
+        window.location.href = '/dashboard';
+        
       } else {
         console.error('OTP verification failed:', data);
         setError(data?.error || 'Invalid verification code. Please try again.');

@@ -1,7 +1,7 @@
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { Navigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
@@ -9,6 +9,16 @@ interface ClientProtectedRouteProps {
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
   const { user, loading, isClientAccount } = useClientAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Only redirect if we're not loading and there's no authenticated user
+    if (!loading && !user) {
+      console.log('No authenticated user, redirecting to home');
+      navigate('/', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
@@ -26,9 +36,12 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     );
   }
 
-  if (!user || !isClientAccount) {
-    return <Navigate to="/" replace />;
+  // If user is authenticated, show the protected content
+  // Remove the isClientAccount check since we want to allow access after OTP verification
+  if (user) {
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  // If no user and not loading, the useEffect will handle the redirect
+  return null;
 }

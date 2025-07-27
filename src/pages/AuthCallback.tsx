@@ -21,17 +21,37 @@ export default function AuthCallback() {
           return;
         }
 
-        console.log('Session found, creating client account...');
+        console.log('Session found, checking/creating client account...');
         
-        // Create client account directly
         try {
+          // Check if client account already exists
+          const { data: existingAccount } = await supabase
+            .from('account_types')
+            .select('account_type')
+            .eq('auth_user_id', session.user.id)
+            .eq('account_type', 'client')
+            .single();
+
+          if (existingAccount) {
+            console.log('Client account exists, redirecting to dashboard');
+            navigate('/dashboard');
+            return;
+          }
+
+          // Create new client account
+          console.log('Creating new client account...');
+          
           // Create account type record
-          await supabase
+          const { error: accountError } = await supabase
             .from('account_types')
             .insert({ auth_user_id: session.user.id, account_type: 'client' });
 
+          if (accountError) {
+            console.error('Error creating account type:', accountError);
+          }
+
           // Create company profile
-          await supabase
+          const { error: profileError } = await supabase
             .from('client_workspace.company_profiles')
             .insert({
               auth_user_id: session.user.id,
@@ -42,27 +62,17 @@ export default function AuthCallback() {
               onboarding_status: 'completed'
             });
 
-          console.log('Client account created, redirecting to dashboard');
-          navigate('/dashboard');
-        } catch (dbError) {
-          console.log('Account might already exist, checking...');
-          
-          // Check if account already exists
-          const { data: existing } = await supabase
-            .from('account_types')
-            .select('account_type')
-            .eq('auth_user_id', session.user.id)
-            .eq('account_type', 'client')
-            .single();
-          
-          if (existing) {
-            console.log('Account exists, redirecting to dashboard');
-            navigate('/dashboard');
-          } else {
-            console.error('Failed to create or find account:', dbError);
-            setError('Account setup failed. Please try again.');
-            setTimeout(() => navigate('/'), 3000);
+          if (profileError) {
+            console.error('Error creating company profile:', profileError);
           }
+
+          console.log('Client account created successfully, redirecting to dashboard');
+          navigate('/dashboard');
+          
+        } catch (dbError) {
+          console.error('Database error:', dbError);
+          setError('Account setup failed. Please try again.');
+          setTimeout(() => navigate('/'), 3000);
         }
         
       } catch (error) {

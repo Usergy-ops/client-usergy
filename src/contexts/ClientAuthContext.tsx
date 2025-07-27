@@ -2,7 +2,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { useNavigate } from 'react-router-dom';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -21,7 +20,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
-  const navigate = useNavigate();
 
   const checkClientAuth = async (userId: string): Promise<boolean> => {
     try {
@@ -46,77 +44,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const createClientAccount = async (userId: string, metadata: any = {}) => {
-    try {
-      console.log('Creating client account for user:', userId);
-      
-      // Create account type record
-      const { error: accountError } = await supabase
-        .from('account_types')
-        .insert({ auth_user_id: userId, account_type: 'client' });
-
-      if (accountError) {
-        console.error('Error creating account type:', accountError);
-      }
-
-      // Create basic company profile
-      const { error: profileError } = await supabase
-        .from('client_workspace.company_profiles')
-        .insert({
-          auth_user_id: userId,
-          company_name: metadata.companyName || 'My Company',
-          contact_first_name: metadata.firstName || '',
-          contact_last_name: metadata.lastName || '',
-          billing_email: metadata.email || '',
-          onboarding_status: 'completed'
-        });
-
-      if (profileError) {
-        console.error('Error creating company profile:', profileError);
-      }
-
-      setIsClientAccount(true);
-      return true;
-    } catch (error) {
-      console.error('Error creating client account:', error);
-      return false;
-    }
-  };
-
-  const handleAuthStateChange = async (event: string, session: Session | null) => {
-    console.log('Auth state change:', event, session?.user?.id);
-    
-    setSession(session);
-    setUser(session?.user ?? null);
-    
-    if (event === 'SIGNED_IN' && session?.user) {
-      // Check if user is already a client
-      const isClient = await checkClientAuth(session.user.id);
-      
-      if (!isClient) {
-        // Create client account automatically for Google OAuth users
-        if (session.user.app_metadata?.provider === 'google') {
-          const metadata = {
-            companyName: 'My Company',
-            firstName: session.user.user_metadata?.full_name?.split(' ')[0] || '',
-            lastName: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
-            email: session.user.email
-          };
-          
-          await createClientAccount(session.user.id, metadata);
-        }
-      }
-      
-      // Navigate to dashboard for authenticated users
-      navigate('/dashboard');
-    } else if (event === 'SIGNED_OUT') {
-      setIsClientAccount(false);
-      navigate('/');
-    }
-    
-    setLoading(false);
-  };
-
   useEffect(() => {
     // Check initial session
     const initializeAuth = async () => {
@@ -124,9 +51,17 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
+          console.log('Initial session found:', session.user.id);
           setSession(session);
           setUser(session.user);
-          await checkClientAuth(session.user.id);
+          
+          // Check if user is a client
+          const isClient = await checkClientAuth(session.user.id);
+          console.log('Is client account:', isClient);
+          
+          // Don't redirect here - let components handle their own routing
+        } else {
+          console.log('No initial session found');
         }
         
         setLoading(false);
@@ -139,12 +74,28 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     initializeAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthStateChange);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, session?.user?.id);
+      
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Check if user is a client
+        const isClient = await checkClientAuth(session.user.id);
+        console.log('User signed in, is client:', isClient);
+        
+        // Don't redirect here - let components handle their own routing
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
+        setIsClientAccount(false);
+      }
+    });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -190,7 +141,8 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     try {
       await supabase.auth.signOut();
       setIsClientAccount(false);
-      navigate('/');
+      // Redirect to home after sign out
+      window.location.href = '/';
     } catch (error) {
       console.error('Sign out error:', error);
     }
