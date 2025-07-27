@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,12 +31,14 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setError('');
     
     try {
-      console.log('Verifying OTP for:', email);
+      console.log('Verifying OTP for:', email, 'with code:', otpCode);
       
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otpCode,
-        type: 'email',
+      // Use the custom edge function instead of Supabase's built-in verifyOtp
+      const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
+        body: { 
+          email,
+          otpCode 
+        }
       });
 
       if (error) {
@@ -47,13 +48,27 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         return;
       }
 
-      console.log('OTP verification successful');
+      if (!data?.success) {
+        console.error('OTP verification failed:', data);
+        setError(data?.error || 'Invalid verification code. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('OTP verification successful:', data);
       toast({
         title: "Email verified successfully!",
         description: "Welcome to Usergy Client Portal.",
       });
       
-      onSuccess();
+      // If we have an auto sign-in URL, use it
+      if (data.autoSignInUrl) {
+        console.log('Auto-signing in with magic link...');
+        window.location.href = data.autoSignInUrl;
+      } else {
+        // Otherwise, trigger the success callback
+        onSuccess();
+      }
       
     } catch (error) {
       console.error('OTP verification exception:', error);
