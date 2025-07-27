@@ -122,29 +122,78 @@ async function handleClientSignup(req: Request): Promise<Response> {
     await resend.emails.send({
       from: 'Usergy Client Portal <noreply@usergy.ai>',
       to: [email],
-      subject: 'Verify Your Email - Usergy Client Portal',
+      subject: 'Welcome to Usergy - Verify Your Email',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #333; text-align: center;">Welcome to Usergy!</h1>
-          <h2 style="color: #666; text-align: center;">Email Verification Required</h2>
-          
-          <p>Hi ${firstName},</p>
-          
-          <p>Thank you for signing up for the Usergy Client Portal. To complete your registration, please verify your email address using the code below:</p>
-          
-          <div style="background: #f8f9fa; border: 2px solid #e9ecef; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-            <h2 style="color: #333; font-size: 32px; letter-spacing: 4px; margin: 0;">${otpCode}</h2>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Welcome to Usergy</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            
+            <!-- Header with Logo -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
+              <div style="background-color: #ffffff; border-radius: 50%; width: 80px; height: 80px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+                <img src="https://client.usergy.ai/usergy-logo.ico" alt="Usergy Logo" style="width: 40px; height: 40px;" />
+              </div>
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">Welcome to Usergy</h1>
+              <p style="color: #e2e8f0; margin: 10px 0 0; font-size: 16px;">Client Portal</p>
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 40px 30px;">
+              <h2 style="color: #1a202c; margin: 0 0 20px; font-size: 24px; font-weight: 600;">Email Verification Required</h2>
+              
+              <p style="color: #4a5568; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
+                Hi <strong>${firstName}</strong>,
+              </p>
+              
+              <p style="color: #4a5568; margin: 0 0 30px; font-size: 16px; line-height: 1.6;">
+                Thank you for signing up for the Usergy Client Portal. To complete your registration and access your dashboard, please verify your email address using the verification code below:
+              </p>
+              
+              <!-- OTP Code Box -->
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 30px; text-align: center; margin: 30px 0;">
+                <p style="color: #ffffff; margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">Verification Code</p>
+                <div style="background-color: #ffffff; border-radius: 8px; padding: 20px; margin: 10px 0;">
+                  <span style="color: #1a202c; font-size: 36px; font-weight: 700; letter-spacing: 6px; font-family: 'Courier New', monospace;">${otpCode}</span>
+                </div>
+                <p style="color: #e2e8f0; margin: 10px 0 0; font-size: 14px;">Expires in 10 minutes</p>
+              </div>
+              
+              <div style="background-color: #f7fafc; border-left: 4px solid #667eea; padding: 16px; margin: 30px 0;">
+                <p style="color: #4a5568; margin: 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Security Note:</strong> If you didn't sign up for a Usergy account, you can safely ignore this email. Your email address will not be used for any purpose.
+                </p>
+              </div>
+              
+              <p style="color: #4a5568; margin: 30px 0 0; font-size: 16px; line-height: 1.6;">
+                Once verified, you'll have full access to your Usergy Client Portal dashboard and all available features.
+              </p>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background-color: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="color: #718096; margin: 0 0 10px; font-size: 14px;">
+                Best regards,<br>
+                <strong>The Usergy Team</strong>
+              </p>
+              <div style="margin: 20px 0;">
+                <a href="https://usergy.ai" style="color: #667eea; text-decoration: none; font-size: 14px; margin: 0 10px;">Website</a>
+                <span style="color: #cbd5e0;">|</span>
+                <a href="mailto:support@usergy.ai" style="color: #667eea; text-decoration: none; font-size: 14px; margin: 0 10px;">Support</a>
+              </div>
+              <p style="color: #a0aec0; margin: 0; font-size: 12px;">
+                © 2024 Usergy Technologies. All rights reserved.
+              </p>
+            </div>
+            
           </div>
-          
-          <p>This code will expire in 10 minutes.</p>
-          
-          <p>If you didn't sign up for a Usergy account, you can safely ignore this email.</p>
-          
-          <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-          <p style="color: #666; font-size: 14px; text-align: center;">
-            © 2024 Usergy. All rights reserved.
-          </p>
-        </div>
+        </body>
+        </html>
       `
     });
   } catch (emailError) {
@@ -249,24 +298,72 @@ async function handleResendOTP(req: Request): Promise<Response> {
       to: [email],
       subject: 'New Verification Code - Usergy Client Portal',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #333; text-align: center;">New Verification Code</h1>
-          
-          <p>Hi ${firstName},</p>
-          
-          <p>Here's your new verification code for the Usergy Client Portal:</p>
-          
-          <div style="background: #f8f9fa; border: 2px solid #e9ecef; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-            <h2 style="color: #333; font-size: 32px; letter-spacing: 4px; margin: 0;">${otpCode}</h2>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>New Verification Code</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+            
+            <!-- Header with Logo -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
+              <div style="background-color: #ffffff; border-radius: 50%; width: 80px; height: 80px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+                <img src="https://client.usergy.ai/usergy-logo.ico" alt="Usergy Logo" style="width: 40px; height: 40px;" />
+              </div>
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">New Verification Code</h1>
+              <p style="color: #e2e8f0; margin: 10px 0 0; font-size: 16px;">Usergy Client Portal</p>
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 40px 30px;">
+              <h2 style="color: #1a202c; margin: 0 0 20px; font-size: 24px; font-weight: 600;">Fresh Verification Code</h2>
+              
+              <p style="color: #4a5568; margin: 0 0 20px; font-size: 16px; line-height: 1.6;">
+                Hi <strong>${firstName}</strong>,
+              </p>
+              
+              <p style="color: #4a5568; margin: 0 0 30px; font-size: 16px; line-height: 1.6;">
+                As requested, here's your new verification code for the Usergy Client Portal:
+              </p>
+              
+              <!-- OTP Code Box -->
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 30px; text-align: center; margin: 30px 0;">
+                <p style="color: #ffffff; margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">New Verification Code</p>
+                <div style="background-color: #ffffff; border-radius: 8px; padding: 20px; margin: 10px 0;">
+                  <span style="color: #1a202c; font-size: 36px; font-weight: 700; letter-spacing: 6px; font-family: 'Courier New', monospace;">${otpCode}</span>
+                </div>
+                <p style="color: #e2e8f0; margin: 10px 0 0; font-size: 14px;">Expires in 10 minutes</p>
+              </div>
+              
+              <div style="background-color: #fff5f5; border-left: 4px solid #f56565; padding: 16px; margin: 30px 0;">
+                <p style="color: #742a2a; margin: 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Important:</strong> Your previous verification code has been invalidated. Please use only this new code to complete your email verification.
+                </p>
+              </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background-color: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="color: #718096; margin: 0 0 10px; font-size: 14px;">
+                Best regards,<br>
+                <strong>The Usergy Team</strong>
+              </p>
+              <div style="margin: 20px 0;">
+                <a href="https://usergy.ai" style="color: #667eea; text-decoration: none; font-size: 14px; margin: 0 10px;">Website</a>
+                <span style="color: #cbd5e0;">|</span>
+                <a href="mailto:support@usergy.ai" style="color: #667eea; text-decoration: none; font-size: 14px; margin: 0 10px;">Support</a>
+              </div>
+              <p style="color: #a0aec0; margin: 0; font-size: 12px;">
+                © 2024 Usergy Technologies. All rights reserved.
+              </p>
+            </div>
+            
           </div>
-          
-          <p>This code will expire in 10 minutes.</p>
-          
-          <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-          <p style="color: #666; font-size: 14px; text-align: center;">
-            © 2024 Usergy. All rights reserved.
-          </p>
-        </div>
+        </body>
+        </html>
       `
     });
   } catch (emailError) {
