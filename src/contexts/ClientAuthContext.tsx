@@ -1,4 +1,4 @@
-// src/contexts/ClientAuthContext.tsx
+
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -92,7 +92,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
           const isClient = await checkClientAuth(session.user.id);
           
           if (isClient) {
-            // Check if profile is complete
+            // Check if profile is complete using client_workspace schema
             const { data: profile } = await supabase
               .from('client_workspace.company_profiles')
               .select('onboarding_status')
@@ -131,18 +131,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('Starting client signup for:', email);
       
-      // Sign up with metadata
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: {
-            companyName,
-            contactFirstName,
-            contactLastName,
-            accountType: 'client'
-          }
+      // Use edge function for signup to ensure proper OTP handling
+      const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
+        body: {
+          email,
+          password,
+          companyName,
+          firstName: contactFirstName,
+          lastName: contactLastName
         }
       });
 
@@ -151,7 +147,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      console.log('Signup successful, user created:', data.user?.id);
+      console.log('Signup successful, OTP sent');
       return { error: null };
     } catch (error) {
       console.error('Signup exception:', error);

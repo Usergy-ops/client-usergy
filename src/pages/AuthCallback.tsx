@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -35,7 +36,7 @@ export default function AuthCallback() {
             .select()
             .single();
           
-          // Create or update company profile
+          // Create or update company profile using client_workspace schema
           await supabase
             .from('client_workspace.company_profiles')
             .upsert({
@@ -52,7 +53,7 @@ export default function AuthCallback() {
         // Wait for profile to be created
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Check profile completion status
+        // Check profile completion status using client_workspace schema
         const { data: profile } = await supabase
           .from('client_workspace.company_profiles')
           .select('onboarding_status')
