@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,10 @@ export function ClientSignUpForm() {
   const handleGoogleSignUp = async () => {
     try {
       setLoading(true);
+      setError('');
+      
+      console.log('Starting Google OAuth signup...');
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -43,9 +48,14 @@ export function ClientSignUpForm() {
       });
 
       if (error) {
-        setError('Failed to authenticate with Google');
+        console.error('Google OAuth error:', error);
+        setError('Failed to authenticate with Google. Please try again.');
+      } else {
+        console.log('Google OAuth initiated successfully');
+        // OAuth will handle the redirect, no need to do anything here
       }
     } catch (error) {
+      console.error('Google auth exception:', error);
       setError('An unexpected error occurred with Google authentication');
     } finally {
       setLoading(false);
@@ -60,41 +70,61 @@ export function ClientSignUpForm() {
       return;
     }
 
-    setLoading(true);
-    const { error } = await signUp(
-      formData.email,
-      formData.password,
-      formData.companyName,
-      formData.contactFirstName,
-      formData.contactLastName
-    );
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters long');
+      return;
+    }
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
-      // Show OTP verification
+    try {
+      setLoading(true);
+      setError('');
+      
+      console.log('Starting email signup for:', formData.email);
+      
+      const { error } = await signUp(
+        formData.email,
+        formData.password,
+        formData.companyName,
+        formData.contactFirstName,
+        formData.contactLastName
+      );
+
+      if (error) {
+        console.error('Signup error:', error);
+        setError(error.message || 'Failed to create account. Please try again.');
+        return;
+      }
+
+      console.log('Signup successful, showing OTP verification');
       setShowOTPVerification(true);
       toast({
         title: "Check your email!",
         description: "We've sent you a verification code to complete your registration.",
       });
+    } catch (error) {
+      console.error('Signup exception:', error);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
 
   const handleOTPSuccess = () => {
+    console.log('OTP verification successful');
     toast({
       title: "Welcome to Usergy!",
       description: "Your account has been created successfully.",
     });
-    // The auth state change in ClientAuthContext will handle the redirect
+    // The auth context will handle the redirect to dashboard
   };
 
   const handleBackToSignup = () => {
+    console.log('Going back to signup form');
     setShowOTPVerification(false);
+    setLoading(false);
   };
 
+  // Show OTP verification if signup was successful
   if (showOTPVerification) {
     return (
       <OTPVerification
@@ -118,7 +148,8 @@ export function ClientSignUpForm() {
       <button
         type="button"
         onClick={handleGoogleSignUp}
-        className="w-full flex items-center justify-center gap-3 px-6 py-3 border border-border bg-white hover:bg-gray-50 rounded-xl font-medium text-foreground transition-all duration-300 hover:shadow-md"
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-3 px-6 py-3 border border-border bg-white hover:bg-gray-50 rounded-xl font-medium text-foreground transition-all duration-300 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -152,13 +183,14 @@ export function ClientSignUpForm() {
             placeholder="explorer@company.com"
             className="pl-10 usergy-input"
             required
+            disabled={loading}
           />
         </div>
       </div>
 
       {/* Password Field */}
       <div className="space-y-2">
-        <Label htmlFor="password" className="text-sm font-medium">Create your secure password (12+ characters)</Label>
+        <Label htmlFor="password" className="text-sm font-medium">Create your password (8+ characters)</Label>
         <div className="relative">
           <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
@@ -169,11 +201,13 @@ export function ClientSignUpForm() {
             placeholder="Create a strong password"
             className="pl-10 pr-10 usergy-input"
             required
+            disabled={loading}
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            disabled={loading}
           >
             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -183,39 +217,51 @@ export function ClientSignUpForm() {
       {/* Company Name */}
       <div className="space-y-2">
         <Label htmlFor="companyName" className="text-sm font-medium">Company Name</Label>
-        <Input
-          id="companyName"
-          value={formData.companyName}
-          onChange={(e) => updateFormData('companyName', e.target.value)}
-          placeholder="Your Company Ltd"
-          className="usergy-input"
-          required
-        />
+        <div className="relative">
+          <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Input
+            id="companyName"
+            value={formData.companyName}
+            onChange={(e) => updateFormData('companyName', e.target.value)}
+            placeholder="Your Company Ltd"
+            className="pl-10 usergy-input"
+            required
+            disabled={loading}
+          />
+        </div>
       </div>
 
       {/* Name Fields */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="contactFirstName" className="text-sm font-medium">First Name</Label>
-          <Input
-            id="contactFirstName"
-            value={formData.contactFirstName}
-            onChange={(e) => updateFormData('contactFirstName', e.target.value)}
-            placeholder="John"
-            className="usergy-input"
-            required
-          />
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              id="contactFirstName"
+              value={formData.contactFirstName}
+              onChange={(e) => updateFormData('contactFirstName', e.target.value)}
+              placeholder="John"
+              className="pl-10 usergy-input"
+              required
+              disabled={loading}
+            />
+          </div>
         </div>
         <div className="space-y-2">
           <Label htmlFor="contactLastName" className="text-sm font-medium">Last Name</Label>
-          <Input
-            id="contactLastName"
-            value={formData.contactLastName}
-            onChange={(e) => updateFormData('contactLastName', e.target.value)}
-            placeholder="Doe"
-            className="usergy-input"
-            required
-          />
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              id="contactLastName"
+              value={formData.contactLastName}
+              onChange={(e) => updateFormData('contactLastName', e.target.value)}
+              placeholder="Doe"
+              className="pl-10 usergy-input"
+              required
+              disabled={loading}
+            />
+          </div>
         </div>
       </div>
 

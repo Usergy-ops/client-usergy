@@ -12,6 +12,8 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
+        console.log('Auth callback - getting session...');
+        
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError || !session) {
@@ -28,9 +30,16 @@ export default function AuthCallback() {
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Check if user is now a client using the RPC function
-        const { data: clientCheck } = await supabase.rpc('check_user_is_client', {
+        const { data: clientCheck, error: clientError } = await supabase.rpc('check_user_is_client', {
           user_id_param: session.user.id
         });
+        
+        if (clientError) {
+          console.error('Client check error:', clientError);
+          setError('Account verification failed. Please try again.');
+          setTimeout(() => navigate('/'), 3000);
+          return;
+        }
         
         console.log('Client check result:', clientCheck);
         

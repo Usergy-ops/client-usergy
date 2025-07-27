@@ -103,7 +103,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
             console.log('User is a client, redirecting to dashboard');
             navigate('/dashboard');
           } else {
-            console.log('User is not a client, staying on welcome page');
+            console.log('User is not a client, this should not happen in simplified flow');
             // Stay on welcome page - this shouldn't happen with new simplified flow
           }
         } else if (event === 'SIGNED_OUT') {

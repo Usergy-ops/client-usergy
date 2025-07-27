@@ -33,7 +33,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     try {
       console.log('Verifying OTP for:', email, 'with code:', otpCode);
       
-      // Use the custom edge function instead of Supabase's built-in verifyOtp
+      // Use the custom edge function for OTP verification
       const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
         body: { 
           email,
@@ -44,18 +44,17 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       if (error) {
         console.error('OTP verification error:', error);
         setError('Invalid verification code. Please try again.');
-        setLoading(false);
         return;
       }
 
       if (!data?.success) {
         console.error('OTP verification failed:', data);
         setError(data?.error || 'Invalid verification code. Please try again.');
-        setLoading(false);
         return;
       }
 
       console.log('OTP verification successful:', data);
+      
       toast({
         title: "Email verified successfully!",
         description: "Welcome to Usergy Client Portal.",
@@ -65,14 +64,16 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       if (data.autoSignInUrl) {
         console.log('Auto-signing in with magic link...');
         window.location.href = data.autoSignInUrl;
-      } else {
-        // Otherwise, trigger the success callback
-        onSuccess();
+        return;
       }
+      
+      // Otherwise, trigger the success callback
+      onSuccess();
       
     } catch (error) {
       console.error('OTP verification exception:', error);
       setError('An error occurred. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -82,6 +83,8 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setError('');
     
     try {
+      console.log('Resending OTP for:', email);
+      
       // Call the edge function to resend OTP
       const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
@@ -91,6 +94,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         console.error('Resend OTP error:', error);
         setError('Failed to resend verification code. Please try again.');
       } else {
+        console.log('OTP resent successfully');
         toast({
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
@@ -141,6 +145,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
             className="text-center text-lg font-mono tracking-widest usergy-input"
             maxLength={6}
             required
+            disabled={loading}
           />
         </div>
 
@@ -193,6 +198,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           variant="ghost"
           onClick={onBack}
           className="text-muted-foreground hover:text-foreground"
+          disabled={loading}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Sign Up
