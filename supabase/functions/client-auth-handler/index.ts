@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.52.1";
 import { Resend } from "npm:resend@4.0.0";
@@ -31,10 +30,6 @@ interface ClientOTPVerificationRequest {
 interface ClientResendOTPRequest {
   email: string;
 }
-
-const getProductionDomain = () => {
-  return 'https://client.usergy.ai';
-};
 
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
@@ -76,21 +71,22 @@ async function handleClientSignup(req: Request): Promise<Response> {
   try {
     console.log('Starting signup process for:', email);
     
-    // Check if user already exists
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('user_id')
-      .eq('email', email)
-      .single();
+    // Check if user already exists (faster check)
+    const { data: existingUser } = await supabase.auth.admin.listUsers();
+    const userExists = existingUser.users.some(u => u.email === email);
     
-    if (existingUser) {
+    if (userExists) {
       return new Response(
         JSON.stringify({ error: 'User with this email already exists' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 
-    // Create user account
+    // Generate OTP immediately (before user creation for speed)
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Create user account with client metadata
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -112,13 +108,7 @@ async function handleClientSignup(req: Request): Promise<Response> {
       );
     }
 
-    // Generate OTP immediately
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    console.log('Generated OTP:', otpCode, 'for user:', email);
-
-    // Store OTP
+    // Store OTP (parallel with account creation)
     const { error: otpError } = await supabase.from('user_otp_verification').insert({
       email,
       otp_code: otpCode,
@@ -207,6 +197,20 @@ async function handleOTPVerification(req: Request): Promise<Response> {
         email_verified: true
       }
     });
+
+    // Ensure client account records exist using the RPC function
+    try {
+      await supabase.rpc('create_client_account_for_user', {
+        user_id_param: user.id,
+        company_name_param: user.user_metadata?.companyName || 'My Company',
+        first_name_param: user.user_metadata?.contactFirstName || '',
+        last_name_param: user.user_metadata?.contactLastName || ''
+      });
+      console.log('Client account records ensured for user:', user.id);
+    } catch (accountError) {
+      console.error('Error ensuring client account records:', accountError);
+      // Log but don't fail the verification
+    }
 
     console.log('OTP verification successful for:', email);
 

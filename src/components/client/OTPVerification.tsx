@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface OTPVerificationProps {
   email: string;
@@ -19,6 +20,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [otpCode, setOtpCode] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
   const { toast } = useToast();
+  const { refreshSession } = useClientAuth();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,10 +59,13 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Welcome to Usergy Client Portal.",
         });
         
-        onSuccess();
+        // Refresh session to get the latest user data
+        await refreshSession();
         
-        // Force a session refresh
-        await supabase.auth.getSession();
+        // Small delay to ensure database operations complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        onSuccess();
         
         // Redirect to dashboard
         console.log('Redirecting to dashboard...');
