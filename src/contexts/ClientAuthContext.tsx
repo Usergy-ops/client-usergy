@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { redirectToUserPortal, logRedirect } from '@/utils/authRedirectUtils';
+import { redirectToUserPortal, redirectToDashboard, logRedirect } from '@/utils/authRedirectUtils';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -120,9 +120,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
                             !session.user.last_sign_in_at;
           
           await checkClientAuth(session.user.id, isNewSignup);
-          
-          // Don't redirect here - let individual components handle their own redirects
-          // This prevents conflicts with other redirect logic
         } else if (!session) {
           setIsClientAccount(false);
         }

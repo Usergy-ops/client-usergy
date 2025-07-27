@@ -30,6 +30,8 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
+      setError('');
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -42,9 +44,11 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
       });
 
       if (error) {
-        setError('Failed to authenticate with Google');
+        console.error('Google OAuth error:', error);
+        setError('Failed to authenticate with Google. Please try again.');
       }
     } catch (error) {
+      console.error('Google auth error:', error);
       setError('An unexpected error occurred with Google authentication');
     } finally {
       setLoading(false);
@@ -60,16 +64,18 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
     }
 
     setLoading(true);
+    setError('');
+    
     const { error } = await signIn(formData.email, formData.password);
     
     if (error) {
       setError(error.message);
+      setLoading(false);
     } else {
       // Successful sign in - redirect to dashboard
       logRedirect('Email sign in successful', 'dashboard', { email: formData.email });
       redirectToDashboard();
     }
-    setLoading(false);
   };
 
   return (
@@ -85,7 +91,8 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
       <button
         type="button"
         onClick={handleGoogleSignIn}
-        className="w-full flex items-center justify-center gap-3 px-6 py-3 border border-border bg-white hover:bg-gray-50 rounded-xl font-medium text-foreground transition-all duration-300 hover:shadow-md"
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-3 px-6 py-3 border border-border bg-white hover:bg-gray-50 rounded-xl font-medium text-foreground transition-all duration-300 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -119,6 +126,7 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
             placeholder="explorer@company.com"
             className="pl-10 usergy-input"
             required
+            disabled={loading}
           />
         </div>
       </div>
@@ -136,11 +144,13 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
             placeholder="Your secure password"
             className="pl-10 pr-10 usergy-input"
             required
+            disabled={loading}
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            disabled={loading}
           >
             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -154,6 +164,7 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
           variant="link"
           className="p-0 h-auto text-sm text-primary hover:underline"
           onClick={onForgotPassword}
+          disabled={loading}
         >
           Forgot password?
         </Button>

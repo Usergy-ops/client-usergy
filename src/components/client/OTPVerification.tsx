@@ -1,10 +1,10 @@
+
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { useNavigate } from 'react-router-dom';
-import { redirectToSignIn, logRedirect } from '@/utils/authRedirectUtils';
+import { redirectToDashboard, redirectToSignIn, logRedirect } from '@/utils/authRedirectUtils';
 
 interface OTPVerificationProps {
   email: string;
@@ -18,15 +18,12 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const navigate = useNavigate();
 
   useEffect(() => {
-    // Focus first input on mount
     inputRefs.current[0]?.focus();
   }, []);
 
   useEffect(() => {
-    // Countdown timer for resend
     if (resendCooldown > 0) {
       const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
       return () => clearTimeout(timer);
@@ -34,7 +31,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   }, [resendCooldown]);
 
   const handleChange = (index: number, value: string) => {
-    // Only allow digits
     if (value && !/^\d$/.test(value)) return;
 
     const newOtp = [...otp];
@@ -42,12 +38,10 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setOtp(newOtp);
     setError('');
 
-    // Auto-focus next input
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-submit when all digits are entered
     if (newOtp.every(digit => digit) && newOtp.length === 6) {
       handleVerify(newOtp.join(''));
     }
@@ -55,7 +49,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
   const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
     if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      // Focus previous input on backspace
       inputRefs.current[index - 1]?.focus();
     }
   };
@@ -80,7 +73,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const handleVerify = async (otpCode: string) => {
     setLoading(true);
     try {
-      // Try the new edge function first
+      // Try the edge function first
       const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
         body: {
           email,
@@ -89,17 +82,17 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       });
 
       if (!edgeError && data?.success) {
-      // Handle auto sign-in if provided
-      if (data.autoSignInUrl) {
-        logRedirect('Auto sign-in URL provided', data.autoSignInUrl, { email });
-        window.location.href = data.autoSignInUrl;
-        return;
-      }
-      
-      // Success without auto sign-in - redirect to sign in
-      logRedirect('OTP verified successfully', 'sign in page', { email });
-      onSuccess();
-      redirectToSignIn();
+        // Handle auto sign-in if provided
+        if (data.autoSignInUrl) {
+          logRedirect('Auto sign-in URL provided', data.autoSignInUrl, { email });
+          window.location.href = data.autoSignInUrl;
+          return;
+        }
+        
+        // Success without auto sign-in - redirect to sign in
+        logRedirect('OTP verified successfully', 'sign in page', { email });
+        onSuccess();
+        redirectToSignIn();
         return;
       }
 
@@ -117,8 +110,10 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       }
 
       onSuccess();
-      navigate('/profile');
+      logRedirect('OTP verified via fallback', 'dashboard', { email });
+      redirectToDashboard();
     } catch (error) {
+      console.error('OTP verification error:', error);
       setError('An error occurred. Please try again.');
       setLoading(false);
     }
@@ -129,7 +124,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     
     setLoading(true);
     try {
-      // Try the new edge function first
+      // Try the edge function first
       const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
       });
@@ -156,6 +151,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         inputRefs.current[0]?.focus();
       }
     } catch (error) {
+      console.error('Resend error:', error);
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);

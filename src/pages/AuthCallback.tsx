@@ -1,12 +1,13 @@
+
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { redirectToDashboard, redirectToUserPortal, logRedirect } from '@/utils/authRedirectUtils';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Handle the OAuth callback
     const handleAuthStateChange = async (event: string, session: any) => {
       if (event === 'SIGNED_IN' && session) {
         try {
@@ -40,28 +41,46 @@ export default function AuthCallback() {
               
               if (createError) {
                 console.error('Error creating client account for Google user:', createError);
+                
+                // Log the error
+                await supabase.from('error_logs').insert({
+                  error_type: 'google_oauth_client_creation_error',
+                  error_message: createError.message,
+                  context: 'auth_callback',
+                  user_id: session?.user?.id,
+                  metadata: {
+                    error_detail: createError,
+                    provider: 'google'
+                  }
+                });
+                
                 // Redirect to user portal instead of failing
-                window.location.href = 'https://user.usergy.ai';
+                logRedirect('Google OAuth client account creation failed', 'user portal', { userId: session.user.id });
+                redirectToUserPortal();
                 return;
               }
               
               console.log('Client account created for Google user - redirecting to dashboard');
-              window.location.href = 'https://client.usergy.ai/dashboard';
+              logRedirect('Google OAuth client account created successfully', 'dashboard', { userId: session.user.id });
+              redirectToDashboard();
               return;
             } else {
               console.log('User without client account - redirecting to user portal');
-              window.location.href = 'https://user.usergy.ai';
+              logRedirect('User without client account', 'user portal', { userId: session.user.id });
+              redirectToUserPortal();
               return;
             }
           }
 
           // User has client account, redirect to dashboard
           console.log('Client account found - redirecting to dashboard');
-          window.location.href = 'https://client.usergy.ai/dashboard';
+          logRedirect('Client account verified', 'dashboard', { userId: session.user.id });
+          redirectToDashboard();
           
         } catch (error) {
           console.error('Error in auth callback:', error);
-          // Log error to database if possible
+          
+          // Log error to database
           try {
             await supabase.from('error_logs').insert({
               error_type: 'auth_callback_error',
