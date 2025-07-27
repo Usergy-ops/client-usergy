@@ -20,16 +20,16 @@ export function TestConnection() {
           
         if (error) throw error;
         
-        // Test the new RPC functions if user is logged in
+        // Test the updated RPC function if user is logged in
         if (user) {
-          const { data: clientCheck, error: clientError } = await supabase.rpc('check_user_is_client', {
+          const { data: clientCheck, error: clientError } = await supabase.rpc('is_client_account', {
             user_id_param: user.id
           });
           
           if (clientError) {
             console.error('Client check error:', clientError);
           } else {
-            setClientStatus(clientCheck);
+            setClientStatus({ is_client: clientCheck });
           }
         }
         
@@ -66,9 +66,6 @@ export function TestConnection() {
       {clientStatus && (
         <div className="mt-2 text-sm">
           <p>Client Status: {clientStatus.is_client ? 'Client Account' : 'Not Client Account'}</p>
-          {clientStatus.created_at && (
-            <p>Account Created: {new Date(clientStatus.created_at).toLocaleString()}</p>
-          )}
         </div>
       )}
     </div>

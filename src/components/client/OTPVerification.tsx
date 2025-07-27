@@ -62,9 +62,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         // Refresh session to get the latest user data
         await refreshSession();
         
-        // Small delay to ensure database operations complete
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
         onSuccess();
         
         // Redirect to dashboard

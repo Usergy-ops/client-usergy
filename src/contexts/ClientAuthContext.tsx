@@ -22,65 +22,20 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
 
-  const refreshSession = async () => {
-    try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Error refreshing session:', error);
-      } else {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await checkClientAuth(session.user.id);
-        }
-      }
-    } catch (error) {
-      console.error('Error in refreshSession:', error);
-    }
-  };
-
   const checkClientAuth = async (userId: string): Promise<boolean> => {
     try {
       console.log('Checking client auth for user:', userId);
       
-      // First check if account_types record exists
-      const { data: accountData, error: accountError } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', userId)
-        .eq('account_type', 'client')
-        .single();
+      const { data: isClient, error } = await supabase.rpc('is_client_account', {
+        user_id_param: userId
+      });
       
-      if (accountError && accountError.code !== 'PGRST116') {
-        console.error('Error checking account_types:', accountError);
-        
-        // Fallback: Check if user has client metadata
-        const { data: { user: currentUser } } = await supabase.auth.getUser();
-        if (currentUser?.user_metadata?.account_type === 'client') {
-          console.log('User has client metadata, treating as client account');
-          setIsClientAccount(true);
-          
-          // Try to create missing account record
-          try {
-            await supabase.rpc('create_client_account_for_user', {
-              user_id_param: userId,
-              company_name_param: currentUser.user_metadata.companyName || 'My Company',
-              first_name_param: currentUser.user_metadata.contactFirstName || '',
-              last_name_param: currentUser.user_metadata.contactLastName || ''
-            });
-            console.log('Created missing client account records');
-          } catch (createError) {
-            console.error('Error creating missing client account:', createError);
-          }
-          
-          return true;
-        }
-        
+      if (error) {
+        console.error('Error checking client auth:', error);
         setIsClientAccount(false);
         return false;
       }
       
-      const isClient = !!accountData;
       console.log('Client auth check result:', isClient);
       setIsClientAccount(isClient);
       return isClient;
@@ -88,6 +43,27 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       console.error('Error in checkClientAuth:', error);
       setIsClientAccount(false);
       return false;
+    }
+  };
+
+  const refreshSession = async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Error refreshing session:', error);
+        return;
+      }
+      
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        await checkClientAuth(session.user.id);
+      } else {
+        setIsClientAccount(false);
+      }
+    } catch (error) {
+      console.error('Error in refreshSession:', error);
     }
   };
 
@@ -127,15 +103,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (event === 'SIGNED_IN' && session?.user) {
-        // Add a small delay to ensure database operations have completed
-        setTimeout(async () => {
-          await checkClientAuth(session.user.id);
-        }, 1000);
+        await checkClientAuth(session.user.id);
       } else if (event === 'SIGNED_OUT') {
         setIsClientAccount(false);
       }
       
-      setLoading(false);
+      if (event !== 'INITIAL_SESSION') {
+        setLoading(false);
+      }
     });
 
     return () => {

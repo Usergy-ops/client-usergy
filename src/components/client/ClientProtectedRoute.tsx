@@ -8,32 +8,20 @@ interface ClientProtectedRouteProps {
 }
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
-  const { user, loading, isClientAccount, refreshSession } = useClientAuth();
+  const { user, loading, isClientAccount } = useClientAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && !user) {
-      console.log('No authenticated user, redirecting to home');
-      navigate('/', { replace: true });
-      return;
+    if (!loading) {
+      if (!user) {
+        console.log('No authenticated user, redirecting to home');
+        navigate('/', { replace: true });
+      } else if (!isClientAccount) {
+        console.log('User exists but not a client account, redirecting to home');
+        navigate('/', { replace: true });
+      }
     }
-
-    if (!loading && user && !isClientAccount) {
-      console.log('User exists but not a client account, refreshing session and checking again');
-      
-      // Try to refresh session and check again
-      refreshSession().then(() => {
-        // Give a small delay for the refresh to complete
-        setTimeout(() => {
-          // If still not a client account after refresh, redirect
-          if (!isClientAccount) {
-            console.log('Still not a client account after refresh, redirecting to home');
-            navigate('/', { replace: true });
-          }
-        }, 1000);
-      });
-    }
-  }, [user, loading, isClientAccount, navigate, refreshSession]);
+  }, [user, loading, isClientAccount, navigate]);
 
   if (loading) {
     return (

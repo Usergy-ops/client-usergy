@@ -23,65 +23,36 @@ export default function AuthCallback() {
           return;
         }
 
-        console.log('Session found, checking/creating client account...');
+        console.log('Session found, creating client account...');
         setStatus('Setting up your account...');
         
-        try {
-          // First, refresh the session to ensure we have the latest data
-          await refreshSession();
-          
-          // Check if client account already exists
-          const { data: existingAccount, error: checkError } = await supabase
-            .from('account_types')
-            .select('account_type')
-            .eq('auth_user_id', session.user.id)
-            .eq('account_type', 'client')
-            .single();
+        // Use the RPC function to create the client account
+        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
+          user_id_param: session.user.id,
+          company_name_param: session.user.user_metadata?.companyName || 'My Company',
+          first_name_param: session.user.user_metadata?.contactFirstName || 
+            session.user.user_metadata?.full_name?.split(' ')[0] || '',
+          last_name_param: session.user.user_metadata?.contactLastName || 
+            session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+        });
 
-          if (checkError && checkError.code !== 'PGRST116') {
-            console.error('Error checking existing account:', checkError);
-          }
-
-          if (existingAccount) {
-            console.log('Client account exists, redirecting to dashboard');
-            navigate('/dashboard');
-            return;
-          }
-
-          // Create new client account using the RPC function
-          console.log('Creating new client account...');
-          setStatus('Creating your client account...');
-          
-          const { error: createError } = await supabase.rpc('create_client_account_for_user', {
-            user_id_param: session.user.id,
-            company_name_param: session.user.user_metadata?.companyName || 'My Company',
-            first_name_param: session.user.user_metadata?.contactFirstName || session.user.user_metadata?.full_name?.split(' ')[0] || '',
-            last_name_param: session.user.user_metadata?.contactLastName || session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
-          });
-
-          if (createError) {
-            console.error('Error creating client account:', createError);
-            setError('Account setup failed. Please try again.');
-            setTimeout(() => navigate('/'), 3000);
-            return;
-          }
-
-          console.log('Client account created successfully');
-          setStatus('Account created! Redirecting...');
-          
-          // Refresh session again to ensure the new account data is loaded
-          await refreshSession();
-          
-          // Small delay to ensure everything is set up
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          navigate('/dashboard');
-          
-        } catch (dbError) {
-          console.error('Database error:', dbError);
+        if (createError) {
+          console.error('Error creating client account:', createError);
           setError('Account setup failed. Please try again.');
           setTimeout(() => navigate('/'), 3000);
+          return;
         }
+
+        console.log('Client account created successfully');
+        setStatus('Account created! Redirecting...');
+        
+        // Refresh session to ensure the new account data is loaded
+        await refreshSession();
+        
+        // Small delay to ensure everything is set up
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        navigate('/dashboard');
         
       } catch (error) {
         console.error('Auth callback error:', error);

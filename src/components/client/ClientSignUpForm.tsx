@@ -61,10 +61,10 @@ export function ClientSignUpForm() {
       return;
     }
 
+    setLoading(true);
+    setError('');
+    
     try {
-      setLoading(true);
-      setError('');
-      
       console.log('Starting signup process...');
       
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
@@ -116,7 +116,6 @@ export function ClientSignUpForm() {
   const handleBackToSignup = () => {
     console.log('Back to signup form');
     setShowOTPVerification(false);
-    setLoading(false);
   };
 
   if (showOTPVerification) {

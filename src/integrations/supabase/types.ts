@@ -643,6 +643,10 @@ export type Database = {
           expires_at: string
         }[]
       }
+      is_client_account: {
+        Args: { user_id_param: string }
+        Returns: boolean
+      }
       validate_password_requirements: {
         Args: { password_hash: string }
         Returns: boolean
