@@ -89,7 +89,12 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
       if (!edgeError && data?.success) {
         onSuccess();
-        navigate('/profile');
+        // Check if the API response includes a redirect URL
+        if (data.redirectTo) {
+          navigate(data.redirectTo);
+        } else {
+          navigate('/profile');
+        }
         return;
       }
 

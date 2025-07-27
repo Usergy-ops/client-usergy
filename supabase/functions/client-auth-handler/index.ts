@@ -135,9 +135,31 @@ async function handleClientSignup(req: Request): Promise<Response> {
           <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             
             <!-- Header with Logo -->
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
-              <div style="background-color: #ffffff; border-radius: 50%; width: 80px; height: 80px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
-                <img src="https://client.usergy.ai/usergy-logo.ico" alt="Usergy Logo" style="width: 40px; height: 40px;" />
+            <div style="background: linear-gradient(135deg, #00C6FB 0%, #005BEA 100%); padding: 40px 20px; text-align: center;">
+              <div style="margin: 0 auto 20px; text-align: center;">
+                <svg width="160" height="50" viewBox="0 0 320 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="usergy-gradient" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#ffffff"/>
+                      <stop offset="1" stop-color="#f8fafc"/>
+                    </linearGradient>
+                    <linearGradient id="text-gradient" x1="60" y1="40" x2="320" y2="40" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#ffffff"/>
+                      <stop offset="1" stop-color="#f8fafc"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="0" y="20" width="40" height="40" rx="10" fill="url(#usergy-gradient)"/>
+                  <g transform="translate(8,28)">
+                    <circle cx="6" cy="12" r="3" fill="#00C6FB"/>
+                    <circle cx="18" cy="6" r="3" fill="#00C6FB"/>
+                    <circle cx="18" cy="18" r="3" fill="#00C6FB"/>
+                    <path d="M8.5 14l7-4" stroke="#00C6FB" stroke-width="2"/>
+                    <path d="M8.5 10l7 4" stroke="#00C6FB" stroke-width="2"/>
+                  </g>
+                  <text x="60" y="54" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="44" font-weight="bold" fill="url(#text-gradient)">
+                    Usergy
+                  </text>
+                </svg>
               </div>
               <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">Welcome to Usergy</h1>
               <p style="color: #e2e8f0; margin: 10px 0 0; font-size: 16px;">Client Portal</p>
@@ -283,12 +305,33 @@ async function handleOTPVerification(req: Request): Promise<Response> {
     await supabase.auth.admin.updateUserById(user.id, {
       email_confirm: true
     });
+
+    // Create client account after email verification
+    try {
+      const userMetadata = user.user_metadata;
+      const { error: createError } = await supabase.rpc(
+        'create_client_account_for_user',
+        {
+          user_id_param: user.id,
+          company_name_param: userMetadata?.company_name || 'My Company',
+          first_name_param: userMetadata?.first_name || null,
+          last_name_param: userMetadata?.last_name || null
+        }
+      );
+      
+      if (createError) {
+        console.error('Error creating client account:', createError);
+      }
+    } catch (accountError) {
+      console.error('Error in client account creation:', accountError);
+    }
   }
 
   return new Response(
     JSON.stringify({ 
       success: true, 
-      message: 'Email verified successfully! You can now sign in.' 
+      message: 'Email verified successfully! Redirecting to dashboard...',
+      redirectTo: '/dashboard'
     }),
     { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
   );
@@ -347,9 +390,31 @@ async function handleResendOTP(req: Request): Promise<Response> {
           <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
             
             <!-- Header with Logo -->
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center;">
-              <div style="background-color: #ffffff; border-radius: 50%; width: 80px; height: 80px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
-                <img src="https://client.usergy.ai/usergy-logo.ico" alt="Usergy Logo" style="width: 40px; height: 40px;" />
+            <div style="background: linear-gradient(135deg, #00C6FB 0%, #005BEA 100%); padding: 40px 20px; text-align: center;">
+              <div style="margin: 0 auto 20px; text-align: center;">
+                <svg width="160" height="50" viewBox="0 0 320 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="usergy-gradient-resend" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#ffffff"/>
+                      <stop offset="1" stop-color="#f8fafc"/>
+                    </linearGradient>
+                    <linearGradient id="text-gradient-resend" x1="60" y1="40" x2="320" y2="40" gradientUnits="userSpaceOnUse">
+                      <stop stop-color="#ffffff"/>
+                      <stop offset="1" stop-color="#f8fafc"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="0" y="20" width="40" height="40" rx="10" fill="url(#usergy-gradient-resend)"/>
+                  <g transform="translate(8,28)">
+                    <circle cx="6" cy="12" r="3" fill="#00C6FB"/>
+                    <circle cx="18" cy="6" r="3" fill="#00C6FB"/>
+                    <circle cx="18" cy="18" r="3" fill="#00C6FB"/>
+                    <path d="M8.5 14l7-4" stroke="#00C6FB" stroke-width="2"/>
+                    <path d="M8.5 10l7 4" stroke="#00C6FB" stroke-width="2"/>
+                  </g>
+                  <text x="60" y="54" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="44" font-weight="bold" fill="url(#text-gradient-resend)">
+                    Usergy
+                  </text>
+                </svg>
               </div>
               <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">New Verification Code</h1>
               <p style="color: #e2e8f0; margin: 10px 0 0; font-size: 16px;">Usergy Client Portal</p>
