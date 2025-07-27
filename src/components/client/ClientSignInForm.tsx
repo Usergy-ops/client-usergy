@@ -61,19 +61,16 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
       setError(error.message);
       setLoading(false);
     }
-    // Success handling is done in the auth context
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Error Message */}
       {error && (
         <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 animate-in slide-in-from-top-2">
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* Google Sign In Button */}
       <button
         type="button"
         onClick={handleGoogleSignIn}
@@ -89,7 +86,6 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
         Continue with Google
       </button>
 
-      {/* Divider */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <span className="w-full border-t border-border" />
@@ -99,7 +95,6 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
         </div>
       </div>
 
-      {/* Email Field */}
       <div className="space-y-2">
         <Label htmlFor="email" className="text-sm font-medium">Your email address</Label>
         <div className="relative">
@@ -117,7 +112,6 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
         </div>
       </div>
 
-      {/* Password Field */}
       <div className="space-y-2">
         <Label htmlFor="password" className="text-sm font-medium">Password</Label>
         <div className="relative">
@@ -143,20 +137,20 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
         </div>
       </div>
 
-      {/* Forgot Password Link */}
-      <div className="text-right">
-        <Button
-          type="button"
-          variant="link"
-          className="p-0 h-auto text-sm text-primary hover:underline"
-          onClick={onForgotPassword}
-          disabled={loading}
-        >
-          Forgot password?
-        </Button>
-      </div>
+      {onForgotPassword && (
+        <div className="text-right">
+          <Button
+            type="button"
+            variant="link"
+            className="p-0 h-auto text-sm text-primary hover:underline"
+            onClick={onForgotPassword}
+            disabled={loading}
+          >
+            Forgot password?
+          </Button>
+        </div>
+      )}
 
-      {/* Submit Button */}
       <Button 
         type="submit"
         className="w-full usergy-btn-primary"

@@ -34,25 +34,16 @@ export function ClientSignUpForm() {
       setLoading(true);
       setError('');
       
-      console.log('Starting Google OAuth signup...');
-      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          }
         }
       });
 
       if (error) {
         console.error('Google OAuth error:', error);
         setError('Failed to authenticate with Google. Please try again.');
-      } else {
-        console.log('Google OAuth initiated successfully');
-        // OAuth will handle the redirect, no need to do anything here
       }
     } catch (error) {
       console.error('Google auth exception:', error);
@@ -79,8 +70,6 @@ export function ClientSignUpForm() {
       setLoading(true);
       setError('');
       
-      console.log('Starting email signup for:', formData.email);
-      
       const { error } = await signUp(
         formData.email,
         formData.password,
@@ -95,7 +84,6 @@ export function ClientSignUpForm() {
         return;
       }
 
-      console.log('Signup successful, showing OTP verification');
       setShowOTPVerification(true);
       toast({
         title: "Check your email!",
@@ -110,21 +98,17 @@ export function ClientSignUpForm() {
   };
 
   const handleOTPSuccess = () => {
-    console.log('OTP verification successful');
     toast({
       title: "Welcome to Usergy!",
       description: "Your account has been created successfully.",
     });
-    // The auth context will handle the redirect to dashboard
   };
 
   const handleBackToSignup = () => {
-    console.log('Going back to signup form');
     setShowOTPVerification(false);
     setLoading(false);
   };
 
-  // Show OTP verification if signup was successful
   if (showOTPVerification) {
     return (
       <OTPVerification
@@ -137,14 +121,12 @@ export function ClientSignUpForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Error Message */}
       {error && (
         <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 animate-in slide-in-from-top-2">
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* Google Sign Up Button */}
       <button
         type="button"
         onClick={handleGoogleSignUp}
@@ -160,7 +142,6 @@ export function ClientSignUpForm() {
         Continue with Google
       </button>
 
-      {/* Divider */}
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <span className="w-full border-t border-border" />
@@ -170,7 +151,6 @@ export function ClientSignUpForm() {
         </div>
       </div>
 
-      {/* Email Field */}
       <div className="space-y-2">
         <Label htmlFor="email" className="text-sm font-medium">Your email address</Label>
         <div className="relative">
@@ -188,7 +168,6 @@ export function ClientSignUpForm() {
         </div>
       </div>
 
-      {/* Password Field */}
       <div className="space-y-2">
         <Label htmlFor="password" className="text-sm font-medium">Create your password (8+ characters)</Label>
         <div className="relative">
@@ -214,7 +193,6 @@ export function ClientSignUpForm() {
         </div>
       </div>
 
-      {/* Company Name */}
       <div className="space-y-2">
         <Label htmlFor="companyName" className="text-sm font-medium">Company Name</Label>
         <div className="relative">
@@ -231,7 +209,6 @@ export function ClientSignUpForm() {
         </div>
       </div>
 
-      {/* Name Fields */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="contactFirstName" className="text-sm font-medium">First Name</Label>
@@ -265,7 +242,6 @@ export function ClientSignUpForm() {
         </div>
       </div>
 
-      {/* Submit Button */}
       <Button 
         type="submit"
         className="w-full usergy-btn-primary"

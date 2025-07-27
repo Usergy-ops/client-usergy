@@ -13,7 +13,6 @@ interface ClientAuthContextType {
   signInWithGoogle: () => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   isClientAccount: boolean;
-  checkClientStatus: () => Promise<void>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -27,20 +26,19 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const checkClientAuth = async (userId: string): Promise<boolean> => {
     try {
-      console.log('Checking client auth for user:', userId);
-      
-      const { data: clientCheck, error } = await supabase.rpc('check_user_is_client', {
-        user_id_param: userId
-      });
+      const { data, error } = await supabase
+        .from('account_types')
+        .select('account_type')
+        .eq('auth_user_id', userId)
+        .eq('account_type', 'client')
+        .single();
       
       if (error) {
         console.error('Error checking client status:', error);
         return false;
       }
       
-      const isClient = clientCheck?.is_client || false;
-      console.log('Client check result:', { isClient, accountExists: clientCheck?.account_exists });
-      
+      const isClient = !!data;
       setIsClientAccount(isClient);
       return isClient;
     } catch (error) {
@@ -49,38 +47,30 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const ensureClientAccount = async (userId: string): Promise<boolean> => {
+  const createClientAccount = async (userId: string, metadata: any = {}) => {
     try {
-      console.log('Ensuring client account exists for user:', userId);
-      
-      const { data: result, error } = await supabase.rpc('create_client_account_for_user', {
-        user_id_param: userId,
-        company_name_param: 'My Company',
-        first_name_param: '',
-        last_name_param: ''
-      });
-      
-      if (error) {
-        console.error('Error creating client account:', error);
-        return false;
-      }
-      
-      console.log('Client account creation result:', result);
-      
-      // Wait a moment for the database to update
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Re-check client status
-      return await checkClientAuth(userId);
-    } catch (error) {
-      console.error('Error in ensureClientAccount:', error);
-      return false;
-    }
-  };
+      // Create account type record
+      await supabase
+        .from('account_types')
+        .insert({ auth_user_id: userId, account_type: 'client' });
 
-  const checkClientStatus = async () => {
-    if (user) {
-      await checkClientAuth(user.id);
+      // Create basic company profile
+      await supabase
+        .from('client_workspace.company_profiles')
+        .insert({
+          auth_user_id: userId,
+          company_name: metadata.companyName || 'My Company',
+          contact_first_name: metadata.firstName || '',
+          contact_last_name: metadata.lastName || '',
+          billing_email: metadata.email || '',
+          onboarding_status: 'completed'
+        });
+
+      setIsClientAccount(true);
+      return true;
+    } catch (error) {
+      console.error('Error creating client account:', error);
+      return false;
     }
   };
 
@@ -91,32 +81,23 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     setUser(session?.user ?? null);
     
     if (event === 'SIGNED_IN' && session?.user) {
-      console.log('User signed in, processing client account...');
+      // Check if user is already a client
+      const isClient = await checkClientAuth(session.user.id);
       
-      try {
-        // Check if user already has a client account
-        const isClient = await checkClientAuth(session.user.id);
+      if (!isClient) {
+        // Create client account automatically
+        const metadata = {
+          companyName: 'My Company',
+          firstName: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+          lastName: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+          email: session.user.email
+        };
         
-        if (isClient) {
-          console.log('User already has client account, redirecting to dashboard');
-          navigate('/dashboard');
-        } else {
-          console.log('User does not have client account, creating one...');
-          
-          // Try to create client account
-          const accountCreated = await ensureClientAccount(session.user.id);
-          
-          if (accountCreated) {
-            console.log('Client account created successfully, redirecting to dashboard');
-            navigate('/dashboard');
-          } else {
-            console.error('Failed to create client account');
-            // Don't redirect to dashboard, let user see error
-          }
-        }
-      } catch (error) {
-        console.error('Error handling auth state change:', error);
+        await createClientAccount(session.user.id, metadata);
       }
+      
+      // Always redirect to dashboard after successful authentication
+      navigate('/dashboard');
     } else if (event === 'SIGNED_OUT') {
       setIsClientAccount(false);
       navigate('/');
@@ -126,33 +107,15 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    let mounted = true;
-
     // Check initial session
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('Error getting session:', error);
-          setLoading(false);
-          return;
-        }
-        
-        console.log('Initial session check:', session?.user?.id);
+        const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
           setSession(session);
           setUser(session.user);
-          
-          // Check client status
-          const isClient = await checkClientAuth(session.user.id);
-          
-          // Only redirect if we're on the landing page and user is verified as client
-          if (isClient && window.location.pathname === '/') {
-            console.log('Client authenticated, redirecting to dashboard');
-            navigate('/dashboard');
-          }
+          await checkClientAuth(session.user.id);
         }
         
         setLoading(false);
@@ -168,7 +131,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(handleAuthStateChange);
 
     return () => {
-      mounted = false;
       subscription.unsubscribe();
     };
   }, [navigate]);
@@ -181,8 +143,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     contactLastName: string
   ) => {
     try {
-      console.log('Starting client signup for:', email);
-      
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {
           email,
@@ -198,7 +158,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      console.log('Signup successful, OTP sent');
       return { error: null };
     } catch (error) {
       console.error('Signup exception:', error);
@@ -208,8 +167,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('Signing in:', email);
-      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -220,7 +177,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      console.log('Sign in successful');
       return { error: null };
     } catch (error) {
       console.error('Sign in exception:', error);
@@ -230,16 +186,10 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      console.log('Starting Google OAuth signin');
-      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
         }
       });
 
@@ -248,7 +198,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      console.log('Google OAuth initiated successfully');
       return { error: null };
     } catch (error) {
       console.error('Google signin error:', error);
@@ -274,8 +223,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     signIn,
     signInWithGoogle,
     signOut,
-    isClientAccount,
-    checkClientStatus
+    isClientAccount
   };
 
   return (

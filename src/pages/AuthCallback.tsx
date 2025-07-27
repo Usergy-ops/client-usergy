@@ -7,13 +7,11 @@ import { NetworkNodes } from '@/components/client/NetworkNodes';
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>('Verifying access...');
+  const [status, setStatus] = useState<string>('Processing authentication...');
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        console.log('Auth callback - getting session...');
-        
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError || !session) {
@@ -23,46 +21,48 @@ export default function AuthCallback() {
           return;
         }
 
-        console.log('Session found for user:', session.user.id);
-        setStatus('Setting up your account...');
+        console.log('Session found, creating client account...');
         
-        // First, ensure the user has a client account
-        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
-          user_id_param: session.user.id,
-          company_name_param: 'My Company',
-          first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || '',
-          last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
-        });
-        
-        if (createError) {
-          console.error('Error creating client account:', createError);
-          // Don't fail here - might already exist
-        }
-        
-        // Wait a moment for database operations to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Verify client status
-        const { data: clientCheck, error: clientError } = await supabase.rpc('check_user_is_client', {
-          user_id_param: session.user.id
-        });
-        
-        if (clientError) {
-          console.error('Client check error:', clientError);
-          setError('Account verification failed. Please try again.');
-          setTimeout(() => navigate('/'), 3000);
-          return;
-        }
-        
-        console.log('Client check result:', clientCheck);
-        
-        if (clientCheck?.is_client) {
-          console.log('User is verified as client, redirecting to dashboard');
+        // Create client account directly
+        try {
+          // Create account type record
+          await supabase
+            .from('account_types')
+            .insert({ auth_user_id: session.user.id, account_type: 'client' });
+
+          // Create company profile
+          await supabase
+            .from('client_workspace.company_profiles')
+            .insert({
+              auth_user_id: session.user.id,
+              company_name: 'My Company',
+              contact_first_name: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+              contact_last_name: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+              billing_email: session.user.email,
+              onboarding_status: 'completed'
+            });
+
+          console.log('Client account created, redirecting to dashboard');
           navigate('/dashboard');
-        } else {
-          console.log('User is not a client account');
-          setError('Account setup incomplete. Please contact support.');
-          setTimeout(() => navigate('/'), 3000);
+        } catch (dbError) {
+          console.log('Account might already exist, checking...');
+          
+          // Check if account already exists
+          const { data: existing } = await supabase
+            .from('account_types')
+            .select('account_type')
+            .eq('auth_user_id', session.user.id)
+            .eq('account_type', 'client')
+            .single();
+          
+          if (existing) {
+            console.log('Account exists, redirecting to dashboard');
+            navigate('/dashboard');
+          } else {
+            console.error('Failed to create or find account:', dbError);
+            setError('Account setup failed. Please try again.');
+            setTimeout(() => navigate('/'), 3000);
+          }
         }
         
       } catch (error) {
@@ -88,7 +88,7 @@ export default function AuthCallback() {
           <>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-lg font-semibold text-foreground">{status}</p>
-            <p className="text-sm text-muted-foreground mt-2">This may take a moment</p>
+            <p className="text-sm text-muted-foreground mt-2">Almost there...</p>
           </>
         )}
       </div>

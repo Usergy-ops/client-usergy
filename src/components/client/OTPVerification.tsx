@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,9 +32,8 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setError('');
     
     try {
-      console.log('Verifying OTP for:', email, 'with code:', otpCode);
+      console.log('Verifying OTP for:', email);
       
-      // Use the custom edge function for OTP verification
       const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
         body: { 
           email,
@@ -41,33 +41,19 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         }
       });
 
-      if (error) {
-        console.error('OTP verification error:', error);
+      if (error || !data?.success) {
+        console.error('OTP verification failed:', error || data);
         setError('Invalid verification code. Please try again.');
         return;
       }
 
-      if (!data?.success) {
-        console.error('OTP verification failed:', data);
-        setError(data?.error || 'Invalid verification code. Please try again.');
-        return;
-      }
-
-      console.log('OTP verification successful:', data);
+      console.log('OTP verification successful');
       
       toast({
         title: "Email verified successfully!",
         description: "Welcome to Usergy Client Portal.",
       });
       
-      // If we have an auto sign-in URL, use it
-      if (data.autoSignInUrl) {
-        console.log('Auto-signing in with magic link...');
-        window.location.href = data.autoSignInUrl;
-        return;
-      }
-      
-      // Otherwise, trigger the success callback
       onSuccess();
       
     } catch (error) {
@@ -83,10 +69,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setError('');
     
     try {
-      console.log('Resending OTP for:', email);
-      
-      // Call the edge function to resend OTP
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
+      const { error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
       });
 
@@ -94,7 +77,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         console.error('Resend OTP error:', error);
         setError('Failed to resend verification code. Please try again.');
       } else {
-        console.log('OTP resent successfully');
         toast({
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
@@ -110,7 +92,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="text-center space-y-2">
         <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
           <Mail className="w-8 h-8 text-primary" />
@@ -121,14 +102,12 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         </p>
       </div>
 
-      {/* Error Message */}
       {error && (
         <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 animate-in slide-in-from-top-2">
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* OTP Form */}
       <form onSubmit={handleVerify} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="otp" className="text-sm font-medium">Verification Code</Label>
@@ -165,7 +144,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         </Button>
       </form>
 
-      {/* Resend Section */}
       <div className="text-center space-y-3">
         <p className="text-sm text-muted-foreground">
           Didn't receive the code?
@@ -191,7 +169,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         </Button>
       </div>
 
-      {/* Back Button */}
       <div className="text-center">
         <Button
           type="button"
