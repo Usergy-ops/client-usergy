@@ -126,6 +126,30 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     contactLastName: string
   ) => {
     try {
+      // Try the enhanced signup flow first
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke('client-auth-handler/signup', {
+        body: {
+          email,
+          password,
+          companyName,
+          firstName: contactFirstName,
+          lastName: contactLastName
+        }
+      });
+
+      // If edge function succeeds, return success
+      if (!edgeError && edgeData?.success) {
+        return { error: null };
+      }
+
+      // If edge function has a specific error, return it
+      if (edgeData?.error) {
+        return { error: { message: edgeData.error } };
+      }
+
+      // Fallback to original signup method
+      console.log('Using fallback signup method...');
+      
       // First check if email exists as a client
       const { data: existingClient } = await supabase
         .rpc('check_email_exists_for_account_type', {

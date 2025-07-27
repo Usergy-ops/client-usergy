@@ -79,6 +79,21 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const handleVerify = async (otpCode: string) => {
     setLoading(true);
     try {
+      // Try the new edge function first
+      const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
+        body: {
+          email,
+          otpCode
+        }
+      });
+
+      if (!edgeError && data?.success) {
+        onSuccess();
+        navigate('/profile');
+        return;
+      }
+
+      // If edge function fails, fallback to standard OTP verification
       const { error } = await supabase.auth.verifyOtp({
         email,
         token: otpCode,
@@ -104,6 +119,20 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     
     setLoading(true);
     try {
+      // Try the new edge function first
+      const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
+        body: { email }
+      });
+
+      if (!edgeError && data?.success) {
+        setResendCooldown(60);
+        setOtp(['', '', '', '', '', '']);
+        inputRefs.current[0]?.focus();
+        setLoading(false);
+        return;
+      }
+
+      // Fallback to standard resend
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
