@@ -613,6 +613,15 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      create_client_account_for_user: {
+        Args: {
+          user_id_param: string
+          company_name_param?: string
+          first_name_param?: string
+          last_name_param?: string
+        }
+        Returns: boolean
+      }
       generate_client_email_confirmation_token: {
         Args: { user_id_param: string }
         Returns: {
