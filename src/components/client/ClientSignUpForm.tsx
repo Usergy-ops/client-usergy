@@ -88,10 +88,20 @@ export function ClientSignUpForm() {
       if (data && data.success) {
         console.log('Signup successful, showing OTP verification');
         setShowOTPVerification(true);
-        toast({
-          title: "Check your email!",
-          description: "We've sent you a verification code to complete your registration.",
-        });
+        
+        // Show different messages based on email delivery status
+        if (data.message.includes('delayed')) {
+          toast({
+            title: "Account created!",
+            description: "Email delivery may be delayed. Please check your email or try resending the code.",
+            variant: "default",
+          });
+        } else {
+          toast({
+            title: "Check your email!",
+            description: "We've sent you a verification code to complete your registration.",
+          });
+        }
       } else {
         console.error('Signup failed:', data);
         setError(data?.error || 'Failed to create account. Please try again.');
@@ -110,7 +120,7 @@ export function ClientSignUpForm() {
       title: "Welcome to Usergy!",
       description: "Your account has been created successfully.",
     });
-    // The OTP verification component should handle redirection
+    // The OTP verification component handles redirection
   };
 
   const handleBackToSignup = () => {

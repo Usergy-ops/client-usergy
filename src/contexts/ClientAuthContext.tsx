@@ -48,13 +48,19 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const createClientAccount = async (userId: string, metadata: any = {}) => {
     try {
+      console.log('Creating client account for user:', userId);
+      
       // Create account type record
-      await supabase
+      const { error: accountError } = await supabase
         .from('account_types')
         .insert({ auth_user_id: userId, account_type: 'client' });
 
+      if (accountError) {
+        console.error('Error creating account type:', accountError);
+      }
+
       // Create basic company profile
-      await supabase
+      const { error: profileError } = await supabase
         .from('client_workspace.company_profiles')
         .insert({
           auth_user_id: userId,
@@ -64,6 +70,10 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
           billing_email: metadata.email || '',
           onboarding_status: 'completed'
         });
+
+      if (profileError) {
+        console.error('Error creating company profile:', profileError);
+      }
 
       setIsClientAccount(true);
       return true;
@@ -84,18 +94,20 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       const isClient = await checkClientAuth(session.user.id);
       
       if (!isClient) {
-        // Create client account automatically
-        const metadata = {
-          companyName: 'My Company',
-          firstName: session.user.user_metadata?.full_name?.split(' ')[0] || '',
-          lastName: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
-          email: session.user.email
-        };
-        
-        await createClientAccount(session.user.id, metadata);
+        // Create client account automatically for Google OAuth users
+        if (session.user.app_metadata?.provider === 'google') {
+          const metadata = {
+            companyName: 'My Company',
+            firstName: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+            lastName: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+            email: session.user.email
+          };
+          
+          await createClientAccount(session.user.id, metadata);
+        }
       }
       
-      // Always redirect to dashboard after successful authentication
+      // Navigate to dashboard for authenticated users
       navigate('/dashboard');
     } else if (event === 'SIGNED_OUT') {
       setIsClientAccount(false);

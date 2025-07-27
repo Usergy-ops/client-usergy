@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
 
 interface OTPVerificationProps {
   email: string;
@@ -20,7 +19,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [otpCode, setOtpCode] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,22 +50,26 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       }
 
       if (data && data.success) {
-        console.log('OTP verification successful, redirecting to dashboard');
+        console.log('OTP verification successful');
         
         toast({
           title: "Email verified successfully!",
           description: "Welcome to Usergy Client Portal.",
         });
         
+        // Call onSuccess to trigger auth context refresh
         onSuccess();
         
-        // If there's an auto sign-in URL, use it, otherwise redirect to dashboard
-        if (data.autoSignInUrl) {
-          console.log('Using auto sign-in URL');
-          window.location.href = data.autoSignInUrl;
+        // Redirect to dashboard using the production URL
+        const redirectUrl = data.redirectUrl || '/dashboard';
+        console.log('Redirecting to:', redirectUrl);
+        
+        // Use window.location.href for production redirect
+        if (redirectUrl.includes('client.usergy.ai')) {
+          window.location.href = redirectUrl;
         } else {
-          console.log('Redirecting to dashboard');
-          navigate('/dashboard');
+          // For local development, use navigate
+          window.location.href = redirectUrl;
         }
       } else {
         console.error('OTP verification failed:', data);
@@ -102,6 +104,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
         });
+        setOtpCode(''); // Clear the current code
       } else {
         setError('Failed to resend verification code. Please try again.');
       }
