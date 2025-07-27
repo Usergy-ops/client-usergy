@@ -593,6 +593,13 @@ export type Database = {
         Args: { email_param: string; account_type_param: string }
         Returns: boolean
       }
+      check_user_is_client: {
+        Args: { user_id_param: string }
+        Returns: {
+          is_client: boolean
+          account_exists: boolean
+        }[]
+      }
       cleanup_expired_otp: {
         Args: Record<PropertyKey, never>
         Returns: undefined

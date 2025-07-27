@@ -48,7 +48,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
             This account is not registered as a client account.
           </p>
           <p className="text-sm text-muted-foreground">
-            Redirecting to user portal...
+            Please contact support if you believe this is an error.
           </p>
         </div>
       </div>

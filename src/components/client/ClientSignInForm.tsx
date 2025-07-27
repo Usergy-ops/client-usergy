@@ -5,15 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { redirectToDashboard, logRedirect } from '@/utils/authRedirectUtils';
 
 interface ClientSignInFormProps {
   onForgotPassword?: () => void;
 }
 
 export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
-  const { signIn } = useClientAuth();
+  const { signIn, signInWithGoogle } = useClientAuth();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -32,16 +30,7 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
       setLoading(true);
       setError('');
       
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          }
-        }
-      });
+      const { error } = await signInWithGoogle();
 
       if (error) {
         console.error('Google OAuth error:', error);
@@ -71,11 +60,8 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
     if (error) {
       setError(error.message);
       setLoading(false);
-    } else {
-      // Successful sign in - redirect to dashboard
-      logRedirect('Email sign in successful', 'dashboard', { email: formData.email });
-      redirectToDashboard();
     }
+    // Success handling is done in the auth context
   };
 
   return (

@@ -3,7 +3,6 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { redirectToUserPortal, redirectToDashboard, redirectToProfile, logRedirect } from '@/utils/authRedirectUtils';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -26,25 +25,16 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [isClientAccount, setIsClientAccount] = useState(false);
   const navigate = useNavigate();
 
-  const checkClientAuth = async (userId: string, retryCount = 0): Promise<boolean> => {
+  const checkClientAuth = async (userId: string): Promise<boolean> => {
     try {
-      console.log('Checking if user has client account:', userId, 'retry:', retryCount);
+      console.log('Checking if user has client account:', userId);
       
-      // Use the new RPC function for better reliability
       const { data: clientCheck, error } = await supabase.rpc('check_user_is_client', {
         user_id_param: userId
       });
       
       if (error) {
         console.error('Error checking client status:', error);
-        
-        // For new Google OAuth users, retry a few times as the trigger might be processing
-        if (retryCount < 3) {
-          console.log('Retrying client check in 1 second...');
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          return checkClientAuth(userId, retryCount + 1);
-        }
-        
         return false;
       }
       
@@ -83,7 +73,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
           // Only redirect if we're on the landing page and user is verified as client
           if (isClient && window.location.pathname === '/') {
             console.log('Client authenticated, redirecting to dashboard');
-            redirectToDashboard();
+            navigate('/dashboard');
           }
         });
       }
@@ -103,37 +93,22 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_IN' && session?.user) {
           console.log('User signed in, checking client status...');
           
-          // For Google OAuth, give more time for the trigger to complete
-          const isGoogleUser = session.user.app_metadata?.provider === 'google';
-          if (isGoogleUser) {
-            console.log('Google OAuth user, waiting for account setup...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
+          // Give time for database triggers to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
           
           // Check if user has client account
           const isClient = await checkClientAuth(session.user.id);
           
           if (isClient) {
-            // Check if profile is complete using client_workspace schema
-            const { data: profile } = await supabase
-              .from('client_workspace.company_profiles')
-              .select('onboarding_status')
-              .eq('auth_user_id', session.user.id)
-              .maybeSingle();
-            
-            if (profile?.onboarding_status === 'complete') {
-              console.log('Profile complete, redirecting to dashboard');
-              redirectToDashboard();
-            } else {
-              console.log('Profile incomplete, redirecting to profile setup');
-              redirectToProfile();
-            }
+            console.log('User is a client, redirecting to dashboard');
+            navigate('/dashboard');
           } else {
-            console.log('User is not a client, redirecting to user portal');
-            redirectToUserPortal();
+            console.log('User is not a client, staying on welcome page');
+            // Stay on welcome page - this shouldn't happen with new simplified flow
           }
         } else if (event === 'SIGNED_OUT') {
           setIsClientAccount(false);
+          navigate('/');
         }
         
         setLoading(false);
@@ -144,7 +119,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   const signUp = async (
     email: string, 

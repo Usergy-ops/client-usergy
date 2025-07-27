@@ -24,76 +24,23 @@ export default function AuthCallback() {
         console.log('Session found for user:', session.user.id);
         setStatus('Setting up your account...');
         
-        // For Google OAuth users, the trigger should have already created the account
-        // But let's double-check and handle any edge cases
-        const isGoogleUser = session.user.app_metadata?.provider === 'google';
+        // Give time for database triggers to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        if (isGoogleUser) {
-          console.log('Google OAuth user detected, checking account status...');
-          
-          // Wait a moment for the trigger to complete
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Check if the user is now a client
-          const { data: clientCheck } = await supabase.rpc('check_user_is_client', {
-            user_id_param: session.user.id
-          });
-          
-          console.log('Client check result:', clientCheck);
-          
-          if (!clientCheck?.is_client) {
-            console.log('User not detected as client, attempting manual creation...');
-            
-            // Extract name parts for manual creation
-            const fullName = session.user.user_metadata?.full_name || '';
-            const nameParts = fullName.split(' ');
-            const firstName = nameParts[0] || '';
-            const lastName = nameParts.slice(1).join(' ') || '';
-            
-            // Manually create the client account
-            const { data: creationResult } = await supabase.rpc('create_client_account_for_user', {
-              user_id_param: session.user.id,
-              company_name_param: 'My Company',
-              first_name_param: firstName,
-              last_name_param: lastName
-            });
-            
-            console.log('Manual creation result:', creationResult);
-            
-            if (!creationResult?.success) {
-              console.error('Failed to create client account:', creationResult);
-              setError('Failed to set up your account. Please try again.');
-              setTimeout(() => navigate('/'), 3000);
-              return;
-            }
-          }
-        }
+        // Check if user is now a client using the RPC function
+        const { data: clientCheck } = await supabase.rpc('check_user_is_client', {
+          user_id_param: session.user.id
+        });
         
-        setStatus('Checking your profile...');
+        console.log('Client check result:', clientCheck);
         
-        // Wait for profile to be fully set up
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Check profile completion status using client_workspace schema
-        const { data: profile, error: profileError } = await supabase
-          .from('client_workspace.company_profiles')
-          .select('onboarding_status')
-          .eq('auth_user_id', session.user.id)
-          .maybeSingle();
-        
-        if (profileError) {
-          console.error('Profile check error:', profileError);
-          setError('Failed to check profile status. Please try again.');
-          setTimeout(() => navigate('/'), 3000);
-          return;
-        }
-        
-        if (profile?.onboarding_status === 'complete') {
-          console.log('Profile complete, redirecting to dashboard');
+        if (clientCheck?.is_client) {
+          console.log('User is a client, redirecting to dashboard');
           navigate('/dashboard');
         } else {
-          console.log('Profile incomplete, redirecting to profile setup');
-          navigate('/profile');
+          console.log('User is not a client, this should not happen in simplified flow');
+          setError('Account setup failed. Please try again.');
+          setTimeout(() => navigate('/'), 3000);
         }
         
       } catch (error) {
