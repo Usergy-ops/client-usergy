@@ -94,7 +94,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
           console.log('User signed in, checking client status...');
           
           // Give time for database triggers to complete
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 2000));
           
           // Check if user has client account
           const isClient = await checkClientAuth(session.user.id);
@@ -103,8 +103,15 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
             console.log('User is a client, redirecting to dashboard');
             navigate('/dashboard');
           } else {
-            console.log('User is not a client, this should not happen in simplified flow');
-            // Stay on welcome page - this shouldn't happen with new simplified flow
+            console.log('User is not a client, checking if this is a new signup...');
+            // For new signups, the trigger might need more time
+            setTimeout(async () => {
+              const recheckIsClient = await checkClientAuth(session.user.id);
+              if (recheckIsClient) {
+                console.log('User is now a client after recheck, redirecting to dashboard');
+                navigate('/dashboard');
+              }
+            }, 1000);
           }
         } else if (event === 'SIGNED_OUT') {
           setIsClientAccount(false);
@@ -185,7 +192,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/dashboard`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',

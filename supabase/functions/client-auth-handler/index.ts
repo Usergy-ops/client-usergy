@@ -80,16 +80,16 @@ async function handleClientSignup(req: Request): Promise<Response> {
     );
   }
 
-  // Create user with client metadata
+  // Create user with client metadata - using correct field names
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
     email_confirm: false, // We'll handle email confirmation manually
     user_metadata: {
       account_type: 'client',
-      company_name: companyName,
-      first_name: firstName,
-      last_name: lastName,
+      companyName: companyName,
+      contactFirstName: firstName,
+      contactLastName: lastName
     }
   });
 
@@ -117,7 +117,7 @@ async function handleClientSignup(req: Request): Promise<Response> {
     console.error('OTP storage error:', otpError);
   }
 
-// Send OTP email with improved error handling
+  // Send OTP email with improved error handling
   try {
     const emailResult = await resend.emails.send({
       from: 'Usergy Client Portal <client@user.usergy.ai>',
@@ -307,32 +307,12 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       email_confirm: true
     });
 
-    // Create client account after email verification
-    try {
-      const userMetadata = user.user_metadata;
-      const { error: createError } = await supabase.rpc(
-        'create_client_account_for_user',
-        {
-          user_id_param: user.id,
-          company_name_param: userMetadata?.company_name || 'My Company',
-          first_name_param: userMetadata?.first_name || null,
-          last_name_param: userMetadata?.last_name || null
-        }
-      );
-      
-      if (createError) {
-        console.error('Error creating client account:', createError);
-      }
-    } catch (accountError) {
-      console.error('Error in client account creation:', accountError);
-    }
-
     // Generate tokens for automatic sign-in
     const { data: tokenData, error: tokenError } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email: email,
       options: {
-        redirectTo: 'https://client.usergy.ai/auth/callback'
+        redirectTo: `${Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '')}.vercel.app/dashboard`
       }
     });
 
@@ -392,7 +372,7 @@ async function handleResendOTP(req: Request): Promise<Response> {
   // Get user name for email
   const { data: userData } = await supabase.auth.admin.listUsers();
   const user = userData.users.find(u => u.email === email);
-  const firstName = user?.user_metadata?.first_name || 'there';
+  const firstName = user?.user_metadata?.contactFirstName || 'there';
 
   // Send new OTP email with improved error handling
   try {
