@@ -63,6 +63,9 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
     
     if (error) {
       setError(error.message);
+    } else {
+      // Successful sign in - redirect to dashboard
+      window.location.href = '/dashboard';
     }
     setLoading(false);
   };

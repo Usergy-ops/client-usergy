@@ -104,13 +104,10 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
           const isNewSignup = session.user.user_metadata?.accountType === 'client' &&
                             !session.user.last_sign_in_at;
           
-          const isClient = await checkClientAuth(session.user.id, isNewSignup);
+          await checkClientAuth(session.user.id, isNewSignup);
           
-          // Only redirect if they are a client
-          if (isClient) {
-            console.log('Client authenticated successfully - redirecting to dashboard');
-            navigate('/dashboard');
-          }
+          // Don't redirect here - let individual components handle their own redirects
+          // This prevents conflicts with other redirect logic
         } else if (!session) {
           setIsClientAccount(false);
         }

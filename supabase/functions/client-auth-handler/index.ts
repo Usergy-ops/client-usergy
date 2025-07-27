@@ -332,7 +332,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       type: 'magiclink',
       email: email,
       options: {
-        redirectTo: `${Deno.env.get('SUPABASE_URL')?.replace('https://', 'https://').replace('.supabase.co', '.supabase.co')}/auth/v1/verify?type=magiclink&redirect_to=${encodeURIComponent(`${Deno.env.get('SITE_URL') || 'https://client.usergy.ai'}/dashboard`)}`
+        redirectTo: `${Deno.env.get('SITE_URL') || 'https://client.usergy.ai'}/auth/callback`
       }
     });
 

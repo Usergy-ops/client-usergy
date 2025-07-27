@@ -10,7 +10,10 @@ import { NetworkNodes } from '@/components/client/NetworkNodes';
 type AuthMode = 'signup' | 'signin' | 'reset';
 
 export default function Welcome() {
-  const [authMode, setAuthMode] = useState<AuthMode>('signup');
+  // Check URL params to set initial auth mode
+  const urlParams = new URLSearchParams(window.location.search);
+  const shouldSignIn = urlParams.get('signin') === 'true';
+  const [authMode, setAuthMode] = useState<AuthMode>(shouldSignIn ? 'signin' : 'signup');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">
