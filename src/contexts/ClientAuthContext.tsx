@@ -31,27 +31,33 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       
       // For new signups, wait a bit for the trigger to create account type
       if (isNewSignup) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
-      const { data: accountType, error } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', userId)
-        .eq('account_type', 'client')
-        .maybeSingle();
-      
-      if (error) {
-        console.error('Error checking account type:', error);
-        setIsClientAccount(false);
+      // Check for client account type with retry logic
+      let retryCount = 0;
+      const maxRetries = 3;
+      let accountType = null;
+
+      while (retryCount < maxRetries && !accountType) {
+        const { data, error } = await supabase
+          .from('account_types')
+          .select('account_type')
+          .eq('auth_user_id', userId)
+          .eq('account_type', 'client')
+          .maybeSingle();
         
-        // If this is a new signup and no account type exists, redirect to user portal
-        if (isNewSignup) {
-          logRedirect('New signup without client account', 'user portal', { userId });
-          redirectToUserPortal();
+        if (error) {
+          console.error('Error checking account type:', error);
+          retryCount++;
+          if (retryCount < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
+        } else {
+          accountType = data;
+          break;
         }
-        
-        return false;
       }
       
       const isClient = !!accountType;
@@ -59,8 +65,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       
       setIsClientAccount(isClient);
       
-      // Only redirect if it's not a new signup and user is not a client
-      if (!isClient && !isNewSignup) {
+      if (!isClient) {
         // Check if they have a user account
         const { data: userAccount } = await supabase
           .from('account_types')
@@ -73,9 +78,9 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
           // They have a user account, redirect to user portal
           logRedirect('User has user account', 'user portal', { userId });
           redirectToUserPortal();
-        } else {
-          // No account type at all, sign them out
-          logRedirect('No account type found', 'sign out', { userId });
+        } else if (!isNewSignup) {
+          // No account type at all for existing user, sign them out
+          logRedirect('No account type found for existing user', 'sign out', { userId });
           await supabase.auth.signOut();
           navigate('/');
         }
@@ -115,9 +120,12 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         
         if (event === 'SIGNED_IN' && session?.user) {
-          // Check if this is a new signup based on metadata
-          const isNewSignup = session.user.user_metadata?.accountType === 'client' &&
-                            !session.user.last_sign_in_at;
+          // Check if this is a new signup based on metadata or creation time
+          const userCreatedRecently = session.user.created_at && 
+            new Date(session.user.created_at).getTime() > (Date.now() - 30000); // 30 seconds
+          
+          const isNewSignup = session.user.user_metadata?.accountType === 'client' || 
+                            userCreatedRecently;
           
           await checkClientAuth(session.user.id, isNewSignup);
         } else if (!session) {
@@ -142,6 +150,8 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     contactLastName: string
   ) => {
     try {
+      console.log('Starting signup process for:', email);
+      
       // Try the enhanced signup flow first
       const { data: edgeData, error: edgeError } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {
@@ -153,13 +163,17 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
+      console.log('Edge function response:', edgeData, edgeError);
+
       // If edge function succeeds, return success
       if (!edgeError && edgeData?.success) {
+        console.log('Signup successful via edge function');
         return { error: null };
       }
 
       // If edge function has a specific error, return it
       if (edgeData?.error) {
+        console.log('Edge function returned error:', edgeData.error);
         return { error: { message: edgeData.error } };
       }
 
@@ -196,6 +210,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
+        console.error('Supabase signup error:', error);
         // Handle Supabase auth errors
         if (error.message.includes('already registered')) {
           return { 
@@ -207,7 +222,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      // The trigger will handle creating the account type and profile
+      console.log('Fallback signup successful');
       return { error: null };
     } catch (error) {
       console.error('Sign up error:', error);
@@ -217,13 +232,20 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
+      console.log('Starting sign in process for:', email);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
       
-      if (error) return { error };
+      if (error) {
+        console.error('Sign in error:', error);
+        return { error };
+      }
 
+      console.log('Sign in successful, checking client account...');
+      
       // After successful sign in, check if they have a client account
       if (data.user) {
         const isClient = await checkClientAuth(data.user.id);
@@ -264,6 +286,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
+      console.log('Google OAuth initiated successfully');
       return { error: null };
     } catch (error) {
       console.error('Google signin error:', error);

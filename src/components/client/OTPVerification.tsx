@@ -72,7 +72,11 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
   const handleVerify = async (otpCode: string) => {
     setLoading(true);
+    setError('');
+    
     try {
+      console.log('Starting OTP verification for:', email);
+      
       // Try the edge function first
       const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
         body: {
@@ -81,37 +85,56 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         }
       });
 
+      console.log('Edge function OTP verification response:', data, edgeError);
+
       if (!edgeError && data?.success) {
+        console.log('OTP verification successful via edge function');
+        
         // Handle auto sign-in if provided
         if (data.autoSignInUrl) {
+          console.log('Auto sign-in URL provided:', data.autoSignInUrl);
           logRedirect('Auto sign-in URL provided', data.autoSignInUrl, { email });
           window.location.href = data.autoSignInUrl;
           return;
         }
         
         // Success without auto sign-in - redirect to sign in
+        console.log('OTP verified, redirecting to sign in');
         logRedirect('OTP verified successfully', 'sign in page', { email });
         onSuccess();
-        redirectToSignIn();
+        
+        // Add a small delay to ensure the state is updated
+        setTimeout(() => {
+          redirectToSignIn();
+        }, 500);
         return;
       }
 
       // If edge function fails, fallback to standard OTP verification
-      const { error } = await supabase.auth.verifyOtp({
+      console.log('Falling back to standard OTP verification');
+      
+      const { data: otpData, error } = await supabase.auth.verifyOtp({
         email,
         token: otpCode,
         type: 'email',
       });
 
       if (error) {
+        console.error('OTP verification error:', error);
         setError('Invalid verification code. Please try again.');
         setLoading(false);
         return;
       }
 
+      console.log('OTP verification successful via fallback');
       onSuccess();
-      logRedirect('OTP verified via fallback', 'dashboard', { email });
-      redirectToDashboard();
+      
+      // Wait for auth state to update then redirect
+      setTimeout(() => {
+        logRedirect('OTP verified via fallback', 'dashboard', { email });
+        redirectToDashboard();
+      }, 1000);
+      
     } catch (error) {
       console.error('OTP verification error:', error);
       setError('An error occurred. Please try again.');
@@ -123,13 +146,20 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     if (resendCooldown > 0) return;
     
     setLoading(true);
+    setError('');
+    
     try {
+      console.log('Resending OTP for:', email);
+      
       // Try the edge function first
       const { data, error: edgeError } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
       });
 
+      console.log('Edge function resend response:', data, edgeError);
+
       if (!edgeError && data?.success) {
+        console.log('OTP resend successful via edge function');
         setResendCooldown(60);
         setOtp(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
@@ -138,14 +168,18 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       }
 
       // Fallback to standard resend
+      console.log('Falling back to standard resend');
+      
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
       });
 
       if (error) {
+        console.error('Resend error:', error);
         setError('Failed to resend code. Please try again.');
       } else {
+        console.log('OTP resend successful via fallback');
         setResendCooldown(60);
         setOtp(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();

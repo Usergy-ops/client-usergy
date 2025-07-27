@@ -9,21 +9,50 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const handleAuthStateChange = async (event: string, session: any) => {
+      console.log('AuthCallback - Event:', event, 'Session:', session?.user?.id);
+      
       if (event === 'SIGNED_IN' && session) {
         try {
           console.log('Auth callback - user signed in:', session.user.id);
           
-          // First check if user has a client account type
-          const { data: accountType, error: accountError } = await supabase
-            .from('account_types')
-            .select('account_type')
-            .eq('auth_user_id', session.user.id)
-            .single();
+          // Wait a moment for any database operations to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Check if user has a client account type with retry logic
+          let retryCount = 0;
+          const maxRetries = 3;
+          let accountType = null;
+
+          while (retryCount < maxRetries && !accountType) {
+            const { data, error } = await supabase
+              .from('account_types')
+              .select('account_type')
+              .eq('auth_user_id', session.user.id)
+              .eq('account_type', 'client')
+              .maybeSingle();
+
+            if (error) {
+              console.error('Error checking account type (attempt', retryCount + 1, '):', error);
+              retryCount++;
+              if (retryCount < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                continue;
+              }
+            } else {
+              accountType = data;
+              break;
+            }
+          }
 
           // If no client account exists, check if this is a Google OAuth user
-          if (accountError || !accountType) {
+          if (!accountType) {
             const userMetadata = session.user.user_metadata;
-            const isGoogleUser = userMetadata?.provider === 'google' || session.user.app_metadata?.provider === 'google';
+            const appMetadata = session.user.app_metadata;
+            const isGoogleUser = userMetadata?.provider === 'google' || appMetadata?.provider === 'google';
+            
+            console.log('No client account found. Google user?', isGoogleUser);
+            console.log('User metadata:', userMetadata);
+            console.log('App metadata:', appMetadata);
             
             if (isGoogleUser) {
               console.log('Google OAuth user without client account - creating client account');
@@ -33,9 +62,9 @@ export default function AuthCallback() {
                 'create_client_account_for_user',
                 {
                   user_id_param: session.user.id,
-                  company_name_param: 'My Company',
-                  first_name_param: userMetadata?.given_name || userMetadata?.name?.split(' ')[0] || null,
-                  last_name_param: userMetadata?.family_name || userMetadata?.name?.split(' ').slice(1).join(' ') || null
+                  company_name_param: userMetadata?.company_name || 'My Company',
+                  first_name_param: userMetadata?.given_name || userMetadata?.name?.split(' ')[0] || userMetadata?.full_name?.split(' ')[0] || null,
+                  last_name_param: userMetadata?.family_name || userMetadata?.name?.split(' ').slice(1).join(' ') || userMetadata?.full_name?.split(' ').slice(1).join(' ') || null
                 }
               );
               
@@ -50,23 +79,34 @@ export default function AuthCallback() {
                   user_id: session?.user?.id,
                   metadata: {
                     error_detail: createError,
-                    provider: 'google'
+                    provider: 'google',
+                    user_metadata: userMetadata,
+                    app_metadata: appMetadata
                   }
                 });
                 
                 // Redirect to user portal instead of failing
-                logRedirect('Google OAuth client account creation failed', 'user portal', { userId: session.user.id });
+                logRedirect('Google OAuth client account creation failed', 'user portal', { 
+                  userId: session.user.id,
+                  error: createError.message 
+                });
                 redirectToUserPortal();
                 return;
               }
               
               console.log('Client account created for Google user - redirecting to dashboard');
-              logRedirect('Google OAuth client account created successfully', 'dashboard', { userId: session.user.id });
+              logRedirect('Google OAuth client account created successfully', 'dashboard', { 
+                userId: session.user.id,
+                created: created 
+              });
               redirectToDashboard();
               return;
             } else {
               console.log('User without client account - redirecting to user portal');
-              logRedirect('User without client account', 'user portal', { userId: session.user.id });
+              logRedirect('User without client account', 'user portal', { 
+                userId: session.user.id,
+                isGoogleUser: false 
+              });
               redirectToUserPortal();
               return;
             }
@@ -74,7 +114,10 @@ export default function AuthCallback() {
 
           // User has client account, redirect to dashboard
           console.log('Client account found - redirecting to dashboard');
-          logRedirect('Client account verified', 'dashboard', { userId: session.user.id });
+          logRedirect('Client account verified', 'dashboard', { 
+            userId: session.user.id,
+            accountType: accountType 
+          });
           redirectToDashboard();
           
         } catch (error) {
@@ -89,7 +132,8 @@ export default function AuthCallback() {
               user_id: session?.user?.id,
               metadata: {
                 error_detail: error.stack,
-                session_provider: session?.user?.app_metadata?.provider
+                session_provider: session?.user?.app_metadata?.provider,
+                event: event
               }
             });
           } catch (logError) {
@@ -100,6 +144,7 @@ export default function AuthCallback() {
           navigate('/profile');
         }
       } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out in callback');
         navigate('/');
       }
     };
