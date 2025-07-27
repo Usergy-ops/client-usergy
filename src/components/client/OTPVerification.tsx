@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { redirectToSignIn, logRedirect } from '@/utils/authRedirectUtils';
 
 interface OTPVerificationProps {
   email: string;
@@ -88,16 +89,17 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       });
 
       if (!edgeError && data?.success) {
-        // Handle auto sign-in if provided
-        if (data.autoSignInUrl) {
-          console.log('Auto sign-in URL provided - redirecting to:', data.autoSignInUrl);
-          window.location.href = data.autoSignInUrl;
-          return;
-        }
-        
-        // Success without auto sign-in - user needs to manually sign in
-        onSuccess();
-        navigate('/?signin=true');
+      // Handle auto sign-in if provided
+      if (data.autoSignInUrl) {
+        logRedirect('Auto sign-in URL provided', data.autoSignInUrl, { email });
+        window.location.href = data.autoSignInUrl;
+        return;
+      }
+      
+      // Success without auto sign-in - redirect to sign in
+      logRedirect('OTP verified successfully', 'sign in page', { email });
+      onSuccess();
+      redirectToSignIn();
         return;
       }
 

@@ -332,7 +332,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       type: 'magiclink',
       email: email,
       options: {
-        redirectTo: `${Deno.env.get('SITE_URL') || 'https://client.usergy.ai'}/auth/callback`
+        redirectTo: 'https://client.usergy.ai/auth/callback'
       }
     });
 

@@ -46,7 +46,7 @@ export default function AuthCallback() {
               }
               
               console.log('Client account created for Google user - redirecting to dashboard');
-              window.location.href = '/dashboard';
+              window.location.href = 'https://client.usergy.ai/dashboard';
               return;
             } else {
               console.log('User without client account - redirecting to user portal');
@@ -57,7 +57,7 @@ export default function AuthCallback() {
 
           // User has client account, redirect to dashboard
           console.log('Client account found - redirecting to dashboard');
-          window.location.href = '/dashboard';
+          window.location.href = 'https://client.usergy.ai/dashboard';
           
         } catch (error) {
           console.error('Error in auth callback:', error);

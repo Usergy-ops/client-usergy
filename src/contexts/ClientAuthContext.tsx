@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { redirectToUserPortal, logRedirect } from '@/utils/authRedirectUtils';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -24,8 +25,10 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [isClientAccount, setIsClientAccount] = useState(false);
   const navigate = useNavigate();
 
-  const checkClientAuth = async (userId: string, isNewSignup = false) => {
+  const checkClientAuth = async (userId: string, isNewSignup = false): Promise<boolean> => {
     try {
+      logRedirect('Checking client auth', 'account verification', { userId, isNewSignup });
+      
       // For new signups, wait a bit for the trigger to create account type
       if (isNewSignup) {
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -40,10 +43,20 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       
       if (error) {
         console.error('Error checking account type:', error);
+        setIsClientAccount(false);
+        
+        // If this is a new signup and no account type exists, redirect to user portal
+        if (isNewSignup) {
+          logRedirect('New signup without client account', 'user portal', { userId });
+          redirectToUserPortal();
+        }
+        
         return false;
       }
       
       const isClient = !!accountType;
+      console.log('Account type found:', accountType?.account_type, 'Is client:', isClient);
+      
       setIsClientAccount(isClient);
       
       // Only redirect if it's not a new signup and user is not a client
@@ -58,9 +71,11 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         
         if (userAccount) {
           // They have a user account, redirect to user portal
-          window.location.href = 'https://user.usergy.ai';
+          logRedirect('User has user account', 'user portal', { userId });
+          redirectToUserPortal();
         } else {
           // No account type at all, sign them out
+          logRedirect('No account type found', 'sign out', { userId });
           await supabase.auth.signOut();
           navigate('/');
         }

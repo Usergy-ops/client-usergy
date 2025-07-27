@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { redirectToDashboard, logRedirect } from '@/utils/authRedirectUtils';
 
 interface ClientSignInFormProps {
   onForgotPassword?: () => void;
@@ -65,7 +66,8 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
       setError(error.message);
     } else {
       // Successful sign in - redirect to dashboard
-      window.location.href = '/dashboard';
+      logRedirect('Email sign in successful', 'dashboard', { email: formData.email });
+      redirectToDashboard();
     }
     setLoading(false);
   };
