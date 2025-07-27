@@ -1,11 +1,10 @@
-// src/utils/authRedirectUtils.ts
+
 /**
  * Centralized authentication redirect utilities
  * Provides consistent redirect behavior across all auth components
  */
 
 const getBaseUrl = () => {
-  // Use current origin for all environments
   return window.location.origin;
 };
 
@@ -42,12 +41,12 @@ export function redirectToUserPortal(): void {
 }
 
 /**
- * Redirects to profile setup
+ * Redirects to auth callback page
  */
-export function redirectToProfile(): void {
-  console.log('Redirecting to profile setup');
+export function redirectToAuthCallback(): void {
+  console.log('Redirecting to auth callback');
   const baseUrl = getBaseUrl();
-  window.location.href = `${baseUrl}/profile`;
+  window.location.href = `${baseUrl}/auth/callback`;
 }
 
 /**
@@ -55,4 +54,13 @@ export function redirectToProfile(): void {
  */
 export function logRedirect(context: string, destination: string, userInfo?: any): void {
   console.log(`[AUTH REDIRECT] ${context} -> ${destination}`, userInfo);
+}
+
+/**
+ * Determines the appropriate redirect based on user state
+ */
+export function getRedirectPath(user: any, isClientAccount: boolean): string {
+  if (!user) return '/';
+  if (isClientAccount) return '/dashboard';
+  return '/';
 }
