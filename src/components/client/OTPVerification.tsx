@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useOTPVerification } from '@/hooks/useOTPVerification';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
 import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
+import { supabase } from '@/lib/supabase';
 
 interface OTPVerificationProps {
   email: string;
