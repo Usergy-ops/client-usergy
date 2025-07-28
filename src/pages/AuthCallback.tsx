@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -10,87 +10,104 @@ export default function AuthCallback() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Processing authentication...');
   const { refreshSession } = useClientAuth();
+  const processedRef = useRef(false);
 
   useEffect(() => {
-    let mounted = true;
+    // Prevent double processing
+    if (processedRef.current) return;
+    processedRef.current = true;
 
     const handleCallback = async () => {
       try {
-        console.log('Starting auth callback...');
+        console.log('AuthCallback: Starting authentication process...');
         
+        // Step 1: Get current session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
         if (sessionError || !session) {
-          console.error('No session found:', sessionError);
-          if (mounted) {
-            setError('Authentication failed. Please try again.');
-            setTimeout(() => navigate('/', { replace: true }), 3000);
-          }
+          console.error('AuthCallback: No session found:', sessionError);
+          setError('Authentication failed. Please try again.');
+          setTimeout(() => navigate('/', { replace: true }), 2000);
           return;
         }
 
-        console.log('Session found for user:', session.user.email);
-        
-        if (mounted) {
-          setStatus('Setting up your account...');
+        console.log('AuthCallback: Session found for user:', session.user.email);
+        setStatus('Setting up your account...');
+
+        // Step 2: Ensure client account exists with retry logic
+        let accountCreated = false;
+        let retries = 0;
+        const maxRetries = 3;
+        const retryDelay = 1000; // Start with 1 second
+
+        while (!accountCreated && retries < maxRetries) {
+          try {
+            console.log(`AuthCallback: Ensuring client account (attempt ${retries + 1}/${maxRetries})...`);
+            
+            const { data: result, error: createError } = await supabase.rpc('ensure_client_account', {
+              user_id_param: session.user.id,
+              company_name_param: session.user.user_metadata?.companyName || 'My Company',
+              first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || 
+                               session.user.user_metadata?.contactFirstName || '',
+              last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 
+                              session.user.user_metadata?.contactLastName || ''
+            });
+
+            if (createError) {
+              console.error('AuthCallback: Error ensuring account:', createError);
+              throw createError;
+            }
+
+            if (result?.success && result?.is_client) {
+              accountCreated = true;
+              console.log('AuthCallback: Client account confirmed');
+            } else if (result?.is_client) {
+              // Account already exists
+              accountCreated = true;
+              console.log('AuthCallback: Existing client account found');
+            } else {
+              throw new Error(result?.error || 'Failed to create client account');
+            }
+          } catch (err) {
+            console.error(`AuthCallback: Attempt ${retries + 1} failed:`, err);
+            retries++;
+            if (retries < maxRetries) {
+              // Exponential backoff
+              await new Promise(resolve => setTimeout(resolve, retryDelay * retries));
+            }
+          }
         }
 
-        // Refresh session to ensure context is updated
+        if (!accountCreated) {
+          setError('Unable to set up your account. Please try again.');
+          setTimeout(() => navigate('/', { replace: true }), 3000);
+          return;
+        }
+
+        // Step 3: Refresh auth context
+        setStatus('Finalizing setup...');
         await refreshSession();
 
-        // Use the new ensure_client_account function
-        console.log('Ensuring client account exists...');
+        // Step 4: Small delay to ensure context is updated
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Step 5: Navigate to dashboard
+        console.log('AuthCallback: Redirecting to dashboard...');
+        setStatus('Welcome! Redirecting to your dashboard...');
         
-        const { data: result, error: ensureError } = await supabase.rpc('ensure_client_account', {
-          user_id_param: session.user.id,
-          company_name_param: session.user.user_metadata?.companyName || 'My Company',
-          first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || 
-                           session.user.user_metadata?.contactFirstName || '',
-          last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 
-                          session.user.user_metadata?.contactLastName || ''
-        });
-
-        if (!mounted) return;
-
-        if (ensureError) {
-          console.error('Error ensuring client account:', ensureError);
-          setError('Account setup failed. Please try signing in again.');
-          setTimeout(() => navigate('/', { replace: true }), 3000);
-          return;
-        }
-
-        if (result?.success && result?.is_client) {
-          console.log('Client account ready, redirecting to dashboard');
-          setStatus('Account ready! Redirecting...');
-          setTimeout(() => {
-            if (mounted) {
-              navigate('/dashboard', { replace: true });
-            }
-          }, 1000);
-        } else {
-          console.error('Client account setup failed:', result);
-          setError('Account setup incomplete. Please try signing in again.');
-          setTimeout(() => {
-            if (mounted) {
-              navigate('/', { replace: true });
-            }
-          }, 3000);
-        }
+        // Use replace to prevent back navigation to callback
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 500);
 
       } catch (error) {
-        console.error('Auth callback error:', error);
-        if (mounted) {
-          setError('An unexpected error occurred. Please try again.');
-          setTimeout(() => navigate('/', { replace: true }), 3000);
-        }
+        console.error('AuthCallback: Unexpected error:', error);
+        setError('An unexpected error occurred. Please try again.');
+        setTimeout(() => navigate('/', { replace: true }), 3000);
       }
     };
 
     handleCallback();
-
-    return () => {
-      mounted = false;
-    };
   }, [navigate, refreshSession]);
 
   return (
@@ -100,15 +117,13 @@ export default function AuthCallback() {
         {error ? (
           <>
             <div className="text-red-500 mb-4 text-lg font-semibold">{error}</div>
-            <p className="text-sm text-muted-foreground">Redirecting to homepage...</p>
+            <p className="text-sm text-muted-foreground">Redirecting...</p>
           </>
         ) : (
           <>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-lg font-semibold text-foreground">{status}</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Please wait while we set up your account...
-            </p>
+            <p className="text-sm text-muted-foreground mt-2">Please wait...</p>
           </>
         )}
       </div>
