@@ -2,6 +2,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
