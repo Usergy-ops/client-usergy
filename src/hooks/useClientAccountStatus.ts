@@ -48,33 +48,39 @@ export function useClientAccountStatus() {
     }
   }, []);
 
-  const pollForAccountReady = useCallback(async (userId: string, maxAttempts = 3): Promise<boolean> => {
-    console.log('Polling for client account readiness...');
+  const ensureClientAccount = useCallback(async (userId: string, userMetadata: any): Promise<boolean> => {
+    console.log('Ensuring client account exists for user:', userId);
     
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`Account check attempt ${attempt}/${maxAttempts}`);
-      
-      const isReady = await checkAccountStatus(userId);
-      
-      if (isReady) {
-        console.log('Client account is ready!');
-        return true;
+    try {
+      const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
+        user_id_param: userId,
+        company_name_param: userMetadata?.companyName || 'My Company',
+        first_name_param: userMetadata?.contactFirstName || 
+          userMetadata?.full_name?.split(' ')[0] || '',
+        last_name_param: userMetadata?.contactLastName || 
+          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
+      });
+
+      if (createError) {
+        console.error('Error ensuring client account:', createError);
+        return false;
       }
 
-      if (attempt < maxAttempts) {
-        // Short delay between attempts
-        const delay = 1000 * attempt;
-        await new Promise(resolve => setTimeout(resolve, delay));
+      if (createResult?.success) {
+        console.log('Client account ensured successfully');
+        return await checkAccountStatus(userId);
       }
+
+      return false;
+    } catch (error) {
+      console.error('Exception ensuring client account:', error);
+      return false;
     }
-
-    console.log('Account not ready after polling');
-    return false;
   }, [checkAccountStatus]);
 
   return {
     ...status,
     checkAccountStatus,
-    pollForAccountReady,
+    ensureClientAccount,
   };
 }

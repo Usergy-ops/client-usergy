@@ -16,7 +16,7 @@ export default function AuthCallback() {
 
     const handleCallback = async () => {
       try {
-        console.log('Starting enhanced auth callback...');
+        console.log('Starting optimized auth callback...');
         
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
@@ -35,89 +35,57 @@ export default function AuthCallback() {
           setStatus('Setting up your account...');
         }
 
-        // Refresh session to ensure we have the latest data
+        // Refresh session to ensure context is updated
         await refreshSession();
 
-        // For Google OAuth, use the safe account creation function
-        if (session.user.app_metadata?.provider === 'google') {
-          console.log('Google OAuth detected, ensuring account creation...');
-          
-          const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
-            user_id_param: session.user.id,
-            company_name_param: 'My Company',
-            first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || '',
-            last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
-          });
+        // For all users, try to ensure client account exists
+        console.log('Ensuring client account exists...');
+        
+        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
+          user_id_param: session.user.id,
+          company_name_param: 'My Company',
+          first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || 
+                           session.user.user_metadata?.contactFirstName || '',
+          last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 
+                          session.user.user_metadata?.contactLastName || ''
+        });
 
-          if (createError) {
-            console.error('Error creating client account:', createError);
-          } else {
-            console.log('Account creation result:', createResult);
-          }
+        if (createError) {
+          console.error('Error with safe account creation:', createError);
+        } else {
+          console.log('Safe account creation result:', createResult);
         }
 
-        // Check if account is ready with improved logic
-        console.log('Checking account readiness...');
-        let isReady = false;
-        let attempts = 0;
-        const maxAttempts = 3; // Reduced attempts
-
-        while (attempts < maxAttempts && mounted) {
-          attempts++;
-          console.log(`Account check attempt ${attempts}/${maxAttempts}`);
-
-          try {
-            const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
-              user_id_param: session.user.id
-            });
-
-            if (checkError) {
-              console.error('Error checking account status:', checkError);
-              // On final attempt, try to create account
-              if (attempts === maxAttempts) {
-                console.log('Final attempt - trying safe account creation...');
-                const { data: safeResult, error: safeError } = await supabase.rpc('create_client_account_safe', {
-                  user_id_param: session.user.id
-                });
-
-                if (!safeError && safeResult?.success) {
-                  console.log('Safe account creation successful');
-                  isReady = true;
-                  break;
-                }
-              }
-            } else {
-              isReady = Boolean(isClient);
-              console.log('Account status check result:', isReady);
-            }
-
-            if (isReady) {
-              console.log('Account is ready!');
-              break;
-            }
-
-            if (attempts < maxAttempts) {
-              const delay = 1000 * attempts; // Linear backoff
-              console.log(`Waiting ${delay}ms before next attempt...`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-            }
-          } catch (pollError) {
-            console.error('Error during polling:', pollError);
-            if (attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-          }
-        }
+        // Single verification check with shorter timeout
+        console.log('Verifying account status...');
+        const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
+          user_id_param: session.user.id
+        });
 
         if (!mounted) return;
 
-        if (isReady) {
-          console.log('Account is ready, navigating to dashboard');
+        if (checkError) {
+          console.error('Error checking account status:', checkError);
+          setError('Account verification failed. Please try signing in again.');
+          setTimeout(() => navigate('/', { replace: true }), 3000);
+          return;
+        }
+
+        const isClientAccount = Boolean(isClient);
+        console.log('Account verification result:', isClientAccount);
+
+        if (isClientAccount) {
+          console.log('Account verified, redirecting to dashboard');
           setStatus('Account ready! Redirecting...');
-          navigate('/dashboard', { replace: true });
+          // Small delay to show success message
+          setTimeout(() => {
+            if (mounted) {
+              navigate('/dashboard', { replace: true });
+            }
+          }, 1000);
         } else {
-          console.error('Account not ready after polling');
-          setError('Account setup encountered an issue. Please try signing in again.');
+          console.error('Account verification failed');
+          setError('Account setup incomplete. Please try signing in again.');
           setTimeout(() => {
             if (mounted) {
               navigate('/', { replace: true });

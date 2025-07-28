@@ -2,19 +2,18 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
 }
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
-  const { user, loading, isClientAccount } = useClientAuth();
+  const { user, loading, isClientAccount, checkClientStatus } = useClientAuth();
   const navigate = useNavigate();
   const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
-    const checkAccess = async () => {
+    const verifyAccess = async () => {
       if (loading || isVerifying) return;
 
       if (!user) {
@@ -23,29 +22,21 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
         return;
       }
 
-      // If we already know the user is a client, we're good
+      // If we already know the user is a client, allow access
       if (isClientAccount) {
         console.log('User is confirmed client, allowing access');
         return;
       }
 
-      // Single verification check
+      // Single verification attempt
       setIsVerifying(true);
       try {
         console.log('Verifying client account status...');
-        const { data: isClient, error } = await supabase.rpc('is_client_account', {
-          user_id_param: user.id
-        });
+        const isClient = await checkClientStatus(user.id);
 
-        if (error) {
-          console.error('Error verifying client status:', error);
-          navigate('/', { replace: true });
-          return;
-        }
-
-        if (Boolean(isClient)) {
+        if (isClient) {
           console.log('User verified as client');
-          // The context will update isClientAccount through its own mechanisms
+          // Context will be updated by checkClientStatus
         } else {
           console.log('User not verified as client, redirecting to home');
           navigate('/', { replace: true });
@@ -58,8 +49,8 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
       }
     };
 
-    checkAccess();
-  }, [user, loading, isClientAccount, navigate]);
+    verifyAccess();
+  }, [user, loading, isClientAccount, navigate, checkClientStatus]);
 
   if (loading || isVerifying) {
     return (

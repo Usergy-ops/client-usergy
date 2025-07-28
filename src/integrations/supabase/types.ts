@@ -629,6 +629,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      create_client_account_safe: {
+        Args: {
+          user_id_param: string
+          company_name_param?: string
+          first_name_param?: string
+          last_name_param?: string
+        }
+        Returns: Json
+      }
       diagnose_user_account: {
         Args: { user_id_param: string }
         Returns: Json

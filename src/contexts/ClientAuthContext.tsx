@@ -24,7 +24,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
-  const [checkingClientStatus, setCheckingClientStatus] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const { logAuthError } = useErrorLogger();
 
   const diagnoseAccount = async (userId: string) => {
@@ -49,13 +49,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const checkClientStatus = async (userId: string): Promise<boolean> => {
-    if (checkingClientStatus) {
-      console.log('Client status check already in progress, skipping...');
+    // Prevent concurrent checks
+    if (isCheckingStatus) {
+      console.log('Client status check already in progress, returning current status');
       return isClientAccount;
     }
 
     try {
-      setCheckingClientStatus(true);
+      setIsCheckingStatus(true);
       console.log('Checking client status for user:', userId);
       
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
@@ -79,7 +80,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setIsClientAccount(false);
       return false;
     } finally {
-      setCheckingClientStatus(false);
+      setIsCheckingStatus(false);
     }
   };
 
