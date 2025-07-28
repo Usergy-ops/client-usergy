@@ -629,6 +629,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      diagnose_user_account: {
+        Args: { user_id_param: string }
+        Returns: Json
+      }
+      force_create_client_account: {
+        Args: { user_id_param: string }
+        Returns: boolean
+      }
       generate_client_email_confirmation_token: {
         Args: { user_id_param: string }
         Returns: {

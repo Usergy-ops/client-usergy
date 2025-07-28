@@ -9,7 +9,8 @@ export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Processing authentication...');
-  const { refreshSession } = useClientAuth();
+  const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
+  const { refreshSession, diagnoseAccount } = useClientAuth();
 
   useEffect(() => {
     let mounted = true;
@@ -36,20 +37,26 @@ export default function AuthCallback() {
           setStatus('Setting up your account...');
         }
 
+        // Run diagnostic first
+        const diagnosis = await diagnoseAccount(session.user.id);
+        if (diagnosis && mounted) {
+          setDiagnosticInfo(diagnosis);
+        }
+
         // Refresh session to ensure we have the latest data
         await refreshSession();
 
         // For Google OAuth, give extra time for the trigger to complete
         if (session.user.app_metadata?.provider === 'google') {
           console.log('Google OAuth detected, waiting for account creation...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
 
-        // Wait for account to be ready with polling
-        console.log('Polling for account readiness...');
+        // Check if account is ready with polling
+        console.log('Checking account readiness...');
         let isReady = false;
         let attempts = 0;
-        const maxAttempts = 8;
+        const maxAttempts = 10;
 
         while (attempts < maxAttempts && mounted) {
           attempts++;
@@ -62,6 +69,18 @@ export default function AuthCallback() {
 
             if (checkError) {
               console.error('Error checking account status:', checkError);
+              
+              // If check fails, try force creating the account
+              console.log('Attempting to force create client account...');
+              const { data: forceResult, error: forceError } = await supabase.rpc('force_create_client_account', {
+                user_id_param: session.user.id
+              });
+
+              if (!forceError && forceResult) {
+                console.log('Force create successful');
+                isReady = true;
+                break;
+              }
             } else {
               isReady = Boolean(isClient);
               console.log('Account status check result:', isReady);
@@ -73,8 +92,7 @@ export default function AuthCallback() {
             }
 
             if (attempts < maxAttempts) {
-              // Wait before next attempt with exponential backoff
-              const delay = Math.min(1000 * Math.pow(1.5, attempts - 1), 4000);
+              const delay = Math.min(1000 * Math.pow(1.3, attempts - 1), 4000);
               console.log(`Waiting ${delay}ms before next attempt...`);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
@@ -92,7 +110,6 @@ export default function AuthCallback() {
           console.log('Account is ready, navigating to dashboard');
           setStatus('Account ready! Redirecting...');
 
-          // Small delay to show success message
           setTimeout(() => {
             if (mounted) {
               navigate('/dashboard', { replace: true });
@@ -122,12 +139,12 @@ export default function AuthCallback() {
     return () => {
       mounted = false;
     };
-  }, [navigate, refreshSession]);
+  }, [navigate, refreshSession, diagnoseAccount]);
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">
       <NetworkNodes />
-      <div className="glass-card p-8 text-center relative z-10">
+      <div className="glass-card p-8 text-center relative z-10 max-w-md">
         {error ? (
           <>
             <div className="text-red-500 mb-4 text-lg font-semibold">{error}</div>
@@ -141,6 +158,19 @@ export default function AuthCallback() {
               Please wait while we set up your account...
             </p>
           </>
+        )}
+        
+        {diagnosticInfo && (
+          <div className="mt-6 p-4 bg-muted rounded-lg text-left">
+            <h3 className="text-sm font-semibold mb-2">Account Status:</h3>
+            <div className="text-xs space-y-1">
+              <div>User: {diagnosticInfo.user_exists ? '✓' : '✗'}</div>
+              <div>Provider: {diagnosticInfo.user_provider}</div>
+              <div>Account Type: {diagnosticInfo.account_type_exists ? '✓' : '✗'}</div>
+              <div>Profile: {diagnosticInfo.profile_exists ? '✓' : '✗'}</div>
+              <div>Is Client: {diagnosticInfo.is_client_account_result ? '✓' : '✗'}</div>
+            </div>
+          </div>
         )}
       </div>
     </div>
