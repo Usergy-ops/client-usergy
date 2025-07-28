@@ -15,20 +15,19 @@ export default function Welcome() {
   const navigate = useNavigate();
   const { user, isClientAccount, loading } = useClientAuth();
   
-  // Check URL params to set initial auth mode
   const urlParams = new URLSearchParams(window.location.search);
   const shouldSignIn = urlParams.get('signin') === 'true';
   const [authMode, setAuthMode] = useState<AuthMode>(shouldSignIn ? 'signin' : 'signup');
 
-  // Auto-redirect authenticated users to dashboard
   useEffect(() => {
+    // Only redirect if we're certain about the auth state
     if (!loading && user && isClientAccount) {
-      console.log('Welcome: Authenticated user detected, redirecting to dashboard');
+      console.log('Welcome: Authenticated client detected, redirecting to dashboard');
       navigate('/dashboard', { replace: true });
     }
   }, [user, isClientAccount, loading, navigate]);
 
-  // Show loading state while checking authentication
+  // Show nothing while checking auth (prevents flash)
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">
@@ -45,7 +44,7 @@ export default function Welcome() {
     );
   }
 
-  // Don't render auth forms if user is already authenticated
+  // Don't render auth forms if user is authenticated
   if (user && isClientAccount) {
     return null;
   }

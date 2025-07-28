@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.52.1";
 import { Resend } from "npm:resend@4.0.0";
@@ -238,7 +237,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       console.error('Error confirming email:', confirmError);
     }
 
-    // Use the new ensure_client_account function
+    // Ensure client account exists
     const { data: createResult, error: createError } = await supabase.rpc('ensure_client_account', {
       user_id_param: user.id,
       company_name_param: user.user_metadata?.companyName || 'My Company',
@@ -248,8 +247,11 @@ async function handleOTPVerification(req: Request): Promise<Response> {
 
     if (createError || !createResult?.success) {
       console.error('Error creating client account:', createError);
-      // Don't fail the verification, just log the error
+      // Continue anyway as user is verified
     }
+
+    // Add delay to ensure database consistency
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     console.log('OTP verification successful for:', email);
 
