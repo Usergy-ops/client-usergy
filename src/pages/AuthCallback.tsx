@@ -29,7 +29,9 @@ export default function AuthCallback() {
           return;
         }
 
-        console.log('Session found, refreshing and waiting for account...');
+        console.log('Session found for user:', session.user.email);
+        console.log('Provider:', session.user.app_metadata?.provider);
+        
         if (mounted) {
           setStatus('Setting up your account...');
         }
@@ -37,11 +39,17 @@ export default function AuthCallback() {
         // Refresh session to ensure we have the latest data
         await refreshSession();
 
+        // For Google OAuth, give extra time for the trigger to complete
+        if (session.user.app_metadata?.provider === 'google') {
+          console.log('Google OAuth detected, waiting for account creation...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
         // Wait for account to be ready with polling
         console.log('Polling for account readiness...');
         let isReady = false;
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = 8;
 
         while (attempts < maxAttempts && mounted) {
           attempts++;
@@ -65,7 +73,7 @@ export default function AuthCallback() {
             }
 
             if (attempts < maxAttempts) {
-              // Wait before next attempt
+              // Wait before next attempt with exponential backoff
               const delay = Math.min(1000 * Math.pow(1.5, attempts - 1), 4000);
               console.log(`Waiting ${delay}ms before next attempt...`);
               await new Promise(resolve => setTimeout(resolve, delay));
@@ -92,7 +100,7 @@ export default function AuthCallback() {
           }, 1000);
         } else {
           console.error('Account not ready after polling');
-          setError('Account setup took too long. Please try again.');
+          setError('Account setup took too long. Please try signing in again.');
           setTimeout(() => {
             if (mounted) {
               navigate('/', { replace: true });
@@ -114,7 +122,7 @@ export default function AuthCallback() {
     return () => {
       mounted = false;
     };
-  }, [navigate]); // Only depend on navigate to prevent infinite loops
+  }, [navigate, refreshSession]);
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">

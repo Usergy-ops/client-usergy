@@ -9,7 +9,7 @@ interface ClientProtectedRouteProps {
 }
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
-  const { user, loading } = useClientAuth();
+  const { user, loading, isClientAccount } = useClientAuth();
   const navigate = useNavigate();
   const [accountStatus, setAccountStatus] = useState<{
     isReady: boolean;
@@ -21,7 +21,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     error: null,
   });
 
-  const pollForAccountReady = async (userId: string, maxAttempts = 8): Promise<boolean> => {
+  const pollForAccountReady = async (userId: string, maxAttempts = 6): Promise<boolean> => {
     console.log('Polling for account readiness for user:', userId);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -46,14 +46,14 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
 
         if (attempt < maxAttempts) {
           // Wait before next attempt, with exponential backoff
-          const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 4000);
+          const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 3000);
           console.log(`Waiting ${delay}ms before next attempt...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       } catch (pollError) {
         console.error('Error during polling:', pollError);
         if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
       }
     }
@@ -69,6 +69,12 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
       if (!user) {
         console.log('No authenticated user, redirecting to home');
         navigate('/', { replace: true });
+        return;
+      }
+
+      // If we already know the user is a client, we're good
+      if (isClientAccount) {
+        setAccountStatus({ isReady: true, isLoading: false, error: null });
         return;
       }
 
@@ -96,7 +102,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     };
 
     checkAccountReady();
-  }, [user, loading, navigate]);
+  }, [user, loading, isClientAccount, navigate]);
 
   if (loading || accountStatus.isLoading) {
     return (
@@ -135,7 +141,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     );
   }
 
-  if (user && accountStatus.isReady) {
+  if (user && (isClientAccount || accountStatus.isReady)) {
     return <>{children}</>;
   }
 
