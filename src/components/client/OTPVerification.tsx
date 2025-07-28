@@ -5,8 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { useNavigate } from 'react-router-dom';
 import { useOTPVerification } from '@/hooks/useOTPVerification';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
 
@@ -20,8 +18,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [otpCode, setOtpCode] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
-  const { refreshSession } = useClientAuth();
-  const navigate = useNavigate();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
@@ -39,14 +35,13 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       if (result.success) {
         toast({
           title: "Email verified successfully!",
-          description: "Redirecting to dashboard...",
+          description: "Redirecting to complete setup...",
         });
 
         onSuccess();
-        await refreshSession();
         
-        // Direct navigation after successful verification
-        navigate('/dashboard', { replace: true });
+        // Redirect to auth callback instead of navigating directly to dashboard
+        window.location.href = '/auth/callback';
       } else {
         await logOTPError(
           new Error(result.error?.message || 'OTP verification failed'),
