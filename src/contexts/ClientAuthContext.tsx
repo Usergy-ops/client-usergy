@@ -2,7 +2,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { useClientAccountCreation } from '@/hooks/useClientAccountCreation';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -13,11 +12,7 @@ interface ClientAuthContextType {
   signOut: () => Promise<void>;
   isClientAccount: boolean;
   refreshSession: () => Promise<void>;
-  accountCreationStatus: {
-    isCreating: boolean;
-    isComplete: boolean;
-    error: string | null;
-  };
+  checkClientStatus: (userId: string) => Promise<boolean>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -27,51 +22,23 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
-  
-  const { 
-    isCreating: accountCreating, 
-    isComplete: accountComplete, 
-    error: accountError,
-    createClientAccount,
-    reset: resetAccountCreation
-  } = useClientAccountCreation();
 
-  const checkClientAuth = async (userId: string, retryCount = 0): Promise<boolean> => {
+  const checkClientStatus = async (userId: string): Promise<boolean> => {
     try {
-      console.log('Checking client auth for user:', userId, 'retry:', retryCount);
-      
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
       });
       
       if (error) {
-        console.error('Error checking client auth:', error);
-        
-        // Retry logic for temporary failures
-        if (retryCount < 5) {
-          console.log('Retrying client auth check...');
-          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
-          return checkClientAuth(userId, retryCount + 1);
-        }
-        
-        setIsClientAccount(false);
+        console.error('Error checking client status:', error);
         return false;
       }
       
-      console.log('Client auth check result:', isClient);
-      setIsClientAccount(isClient);
-      return isClient;
+      const isClientAcc = Boolean(isClient);
+      setIsClientAccount(isClientAcc);
+      return isClientAcc;
     } catch (error) {
-      console.error('Error in checkClientAuth:', error);
-      
-      // Retry logic for network errors
-      if (retryCount < 5) {
-        console.log('Retrying client auth check due to network error...');
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
-        return checkClientAuth(userId, retryCount + 1);
-      }
-      
-      setIsClientAccount(false);
+      console.error('Exception checking client status:', error);
       return false;
     }
   };
@@ -88,7 +55,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        await checkClientAuth(session.user.id);
+        await checkClientStatus(session.user.id);
       } else {
         setIsClientAccount(false);
       }
@@ -102,16 +69,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        console.log('Initializing auth...');
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error('Error getting session:', error);
         } else if (session?.user && mounted) {
-          console.log('Initial session found:', session.user.id);
           setSession(session);
           setUser(session.user);
-          await checkClientAuth(session.user.id);
+          await checkClientStatus(session.user.id);
         }
       } catch (error) {
         console.error('Error initializing auth:', error);
@@ -132,25 +97,11 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.log('User signed in, checking if client account exists...');
-        
-        // First check if account already exists
-        const accountExists = await checkClientAuth(session.user.id);
-        
-        if (!accountExists) {
-          console.log('No client account found, creating one...');
-          const result = await createClientAccount(session.user.id, session.user.user_metadata);
-          
-          if (result.success) {
-            // Wait a bit more and then check again
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await checkClientAuth(session.user.id);
-          }
-        }
-      } else if (event === 'SIGNED_OUT') {
+      if (session?.user) {
+        // Only check status, don't create accounts
+        await checkClientStatus(session.user.id);
+      } else {
         setIsClientAccount(false);
-        resetAccountCreation();
       }
       
       if (event !== 'INITIAL_SESSION') {
@@ -162,11 +113,11 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [createClientAccount, resetAccountCreation]);
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
@@ -185,7 +136,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
@@ -208,7 +159,6 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     try {
       await supabase.auth.signOut();
       setIsClientAccount(false);
-      resetAccountCreation();
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out error:', error);
@@ -224,11 +174,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     signOut,
     isClientAccount,
     refreshSession,
-    accountCreationStatus: {
-      isCreating: accountCreating,
-      isComplete: accountComplete,
-      error: accountError,
-    }
+    checkClientStatus,
   };
 
   return (

@@ -1,29 +1,64 @@
 
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
 }
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
-  const { user, loading, isClientAccount, accountCreationStatus } = useClientAuth();
+  const { user, loading } = useClientAuth();
+  const { pollForAccountReady } = useClientAccountStatus();
   const navigate = useNavigate();
+  const [accountStatus, setAccountStatus] = useState<{
+    isReady: boolean;
+    isLoading: boolean;
+    error: string | null;
+  }>({
+    isReady: false,
+    isLoading: false,
+    error: null,
+  });
 
   useEffect(() => {
-    if (!loading && !accountCreationStatus.isCreating) {
+    const checkAccountReady = async () => {
+      if (loading) return;
+      
       if (!user) {
         console.log('No authenticated user, redirecting to home');
         navigate('/', { replace: true });
-      } else if (!isClientAccount && !accountCreationStatus.isComplete) {
-        console.log('User exists but not a client account and creation not complete, redirecting to home');
+        return;
+      }
+
+      setAccountStatus(prev => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        const isReady = await pollForAccountReady(user.id);
+        
+        if (isReady) {
+          setAccountStatus({ isReady: true, isLoading: false, error: null });
+        } else {
+          console.log('Account not ready, redirecting to home');
+          setAccountStatus({ isReady: false, isLoading: false, error: 'Account setup incomplete' });
+          navigate('/', { replace: true });
+        }
+      } catch (error) {
+        console.error('Error checking account status:', error);
+        setAccountStatus({ 
+          isReady: false, 
+          isLoading: false, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
         navigate('/', { replace: true });
       }
-    }
-  }, [user, loading, isClientAccount, accountCreationStatus, navigate]);
+    };
 
-  if (loading || accountCreationStatus.isCreating) {
+    checkAccountReady();
+  }, [user, loading, navigate, pollForAccountReady]);
+
+  if (loading || accountStatus.isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="glass-card p-8">
@@ -31,10 +66,10 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             <div className="space-y-2">
               <span className="text-lg font-semibold">
-                {accountCreationStatus.isCreating ? 'Setting up your account...' : 'Loading...'}
+                {loading ? 'Loading...' : 'Setting up your account...'}
               </span>
               <p className="text-sm text-muted-foreground">
-                {accountCreationStatus.isCreating ? 'Please wait while we prepare your dashboard' : 'Please wait'}
+                {loading ? 'Please wait' : 'Please wait while we prepare your dashboard'}
               </p>
             </div>
           </div>
@@ -43,12 +78,12 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     );
   }
 
-  if (accountCreationStatus.error) {
+  if (accountStatus.error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="glass-card p-8 text-center">
-          <div className="text-red-500 mb-4 text-lg font-semibold">Account Setup Failed</div>
-          <p className="text-sm text-muted-foreground mb-4">{accountCreationStatus.error}</p>
+          <div className="text-red-500 mb-4 text-lg font-semibold">Account Setup Issue</div>
+          <p className="text-sm text-muted-foreground mb-4">{accountStatus.error}</p>
           <button
             onClick={() => window.location.href = '/'}
             className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
@@ -60,7 +95,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     );
   }
 
-  if (user && (isClientAccount || accountCreationStatus.isComplete)) {
+  if (user && accountStatus.isReady) {
     return <>{children}</>;
   }
 

@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
 
 interface OTPVerificationProps {
   email: string;
@@ -20,8 +21,10 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [error, setError] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
+  const [isWaitingForAccount, setIsWaitingForAccount] = useState(false);
   const { toast } = useToast();
   const { refreshSession } = useClientAuth();
+  const { pollForAccountReady } = useClientAccountStatus();
   const navigate = useNavigate();
 
   const handleVerify = async (e: React.FormEvent) => {
@@ -45,8 +48,6 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         }
       });
 
-      console.log('OTP verification response:', { data, error });
-
       if (error) {
         console.error('OTP verification failed:', error);
         setError('Invalid verification code. Please try again.');
@@ -61,16 +62,30 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Setting up your account...",
         });
         
-        // Refresh session to trigger the account creation process
-        await refreshSession();
-        
         onSuccess();
         
-        // Wait a bit for the account creation to complete before navigating
-        setTimeout(() => {
-          console.log('Navigating to dashboard...');
-          navigate('/dashboard', { replace: true });
-        }, 2000);
+        // Refresh session to get the updated user
+        await refreshSession();
+        
+        // Get the current session to access user ID
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          setIsWaitingForAccount(true);
+          
+          // Wait for account to be ready
+          const isReady = await pollForAccountReady(session.user.id);
+          
+          if (isReady) {
+            console.log('Account is ready, navigating to dashboard');
+            navigate('/dashboard', { replace: true });
+          } else {
+            console.log('Account not ready, staying on current page');
+            setError('Account setup is taking longer than expected. Please try refreshing the page.');
+          }
+        } else {
+          setError('Session not found. Please try signing in again.');
+        }
         
       } else {
         console.error('OTP verification failed:', data);
@@ -81,6 +96,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);
+      setIsWaitingForAccount(false);
     }
   };
 
@@ -89,13 +105,9 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     setError('');
     
     try {
-      console.log('Resending OTP for:', email);
-      
       const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
       });
-
-      console.log('Resend OTP response:', { data, error });
 
       if (error) {
         console.error('Resend OTP error:', error);
@@ -151,19 +163,21 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
             className="text-center text-lg font-mono tracking-widest usergy-input"
             maxLength={6}
             required
-            disabled={loading}
+            disabled={loading || isWaitingForAccount}
           />
         </div>
 
         <Button 
           type="submit" 
           className="w-full usergy-btn-primary"
-          disabled={loading || otpCode.length !== 6}
+          disabled={loading || isWaitingForAccount || otpCode.length !== 6}
         >
-          {loading ? (
+          {loading || isWaitingForAccount ? (
             <div className="flex items-center space-x-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>Verifying & Setting Up Account...</span>
+              <span>
+                {loading ? 'Verifying...' : 'Setting up your account...'}
+              </span>
             </div>
           ) : (
             'Verify Email'
@@ -179,7 +193,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           type="button"
           variant="outline"
           onClick={handleResendCode}
-          disabled={resendLoading}
+          disabled={resendLoading || loading || isWaitingForAccount}
           className="w-full"
         >
           {resendLoading ? (
@@ -202,7 +216,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           variant="ghost"
           onClick={onBack}
           className="text-muted-foreground hover:text-foreground"
-          disabled={loading}
+          disabled={loading || isWaitingForAccount}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Sign Up
