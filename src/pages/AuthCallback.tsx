@@ -9,8 +9,7 @@ export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Processing authentication...');
-  const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
-  const { refreshSession, diagnoseAccount } = useClientAuth();
+  const { refreshSession } = useClientAuth();
 
   useEffect(() => {
     let mounted = true;
@@ -31,32 +30,25 @@ export default function AuthCallback() {
         }
 
         console.log('Session found for user:', session.user.email);
-        console.log('Provider:', session.user.app_metadata?.provider);
         
         if (mounted) {
           setStatus('Setting up your account...');
         }
 
-        // Run diagnostic first
-        const diagnosis = await diagnoseAccount(session.user.id);
-        if (diagnosis && mounted) {
-          setDiagnosticInfo(diagnosis);
-        }
-
         // Refresh session to ensure we have the latest data
         await refreshSession();
 
-        // For Google OAuth, give extra time for the trigger to complete
+        // For Google OAuth, give time for the database trigger to complete
         if (session.user.app_metadata?.provider === 'google') {
           console.log('Google OAuth detected, waiting for account creation...');
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
-        // Check if account is ready with polling
+        // Check if account is ready with limited polling
         console.log('Checking account readiness...');
         let isReady = false;
         let attempts = 0;
-        const maxAttempts = 10;
+        const maxAttempts = 5; // Reduced from 10
 
         while (attempts < maxAttempts && mounted) {
           attempts++;
@@ -69,17 +61,18 @@ export default function AuthCallback() {
 
             if (checkError) {
               console.error('Error checking account status:', checkError);
-              
-              // If check fails, try force creating the account
-              console.log('Attempting to force create client account...');
-              const { data: forceResult, error: forceError } = await supabase.rpc('force_create_client_account', {
-                user_id_param: session.user.id
-              });
+              // Don't try to force create on every error - just log it
+              if (attempts === maxAttempts) {
+                console.log('Max attempts reached, trying force create...');
+                const { data: forceResult, error: forceError } = await supabase.rpc('force_create_client_account', {
+                  user_id_param: session.user.id
+                });
 
-              if (!forceError && forceResult) {
-                console.log('Force create successful');
-                isReady = true;
-                break;
+                if (!forceError && forceResult) {
+                  console.log('Force create successful');
+                  isReady = true;
+                  break;
+                }
               }
             } else {
               isReady = Boolean(isClient);
@@ -92,14 +85,14 @@ export default function AuthCallback() {
             }
 
             if (attempts < maxAttempts) {
-              const delay = Math.min(1000 * Math.pow(1.3, attempts - 1), 4000);
+              const delay = Math.min(1000 * Math.pow(1.2, attempts - 1), 3000); // Reduced delay
               console.log(`Waiting ${delay}ms before next attempt...`);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
           } catch (pollError) {
             console.error('Error during polling:', pollError);
             if (attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              await new Promise(resolve => setTimeout(resolve, 1500));
             }
           }
         }
@@ -109,12 +102,7 @@ export default function AuthCallback() {
         if (isReady) {
           console.log('Account is ready, navigating to dashboard');
           setStatus('Account ready! Redirecting...');
-
-          setTimeout(() => {
-            if (mounted) {
-              navigate('/dashboard', { replace: true });
-            }
-          }, 1000);
+          navigate('/dashboard', { replace: true });
         } else {
           console.error('Account not ready after polling');
           setError('Account setup took too long. Please try signing in again.');
@@ -139,7 +127,7 @@ export default function AuthCallback() {
     return () => {
       mounted = false;
     };
-  }, [navigate, refreshSession, diagnoseAccount]);
+  }, [navigate, refreshSession]);
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">
@@ -158,19 +146,6 @@ export default function AuthCallback() {
               Please wait while we set up your account...
             </p>
           </>
-        )}
-        
-        {diagnosticInfo && (
-          <div className="mt-6 p-4 bg-muted rounded-lg text-left">
-            <h3 className="text-sm font-semibold mb-2">Account Status:</h3>
-            <div className="text-xs space-y-1">
-              <div>User: {diagnosticInfo.user_exists ? '✓' : '✗'}</div>
-              <div>Provider: {diagnosticInfo.user_provider}</div>
-              <div>Account Type: {diagnosticInfo.account_type_exists ? '✓' : '✗'}</div>
-              <div>Profile: {diagnosticInfo.profile_exists ? '✓' : '✗'}</div>
-              <div>Is Client: {diagnosticInfo.is_client_account_result ? '✓' : '✗'}</div>
-            </div>
-          </div>
         )}
       </div>
     </div>

@@ -48,7 +48,7 @@ export function useClientAccountStatus() {
     }
   }, []);
 
-  const pollForAccountReady = useCallback(async (userId: string, maxAttempts = 8): Promise<boolean> => {
+  const pollForAccountReady = useCallback(async (userId: string, maxAttempts = 3): Promise<boolean> => {
     console.log('Polling for client account readiness...');
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -62,8 +62,8 @@ export function useClientAccountStatus() {
       }
 
       if (attempt < maxAttempts) {
-        // Wait before next attempt, with exponential backoff
-        const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 4000);
+        // Reduced delay and exponential backoff
+        const delay = Math.min(1000 * Math.pow(1.3, attempt - 1), 2000);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }

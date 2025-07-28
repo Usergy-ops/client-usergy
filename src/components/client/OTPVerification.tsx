@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,8 +9,6 @@ import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useOTPVerification } from '@/hooks/useOTPVerification';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
-import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
-import { supabase } from '@/lib/supabase';
 
 interface OTPVerificationProps {
   email: string;
@@ -19,13 +18,12 @@ interface OTPVerificationProps {
 
 export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationProps) {
   const [otpCode, setOtpCode] = useState('');
-  const [isWaitingForAccount, setIsWaitingForAccount] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const { refreshSession } = useClientAuth();
   const navigate = useNavigate();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
-  const { pollForAccountReady } = useClientAccountStatus();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,37 +32,21 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       return;
     }
 
+    setIsProcessing(true);
     try {
       const result = await verifyOTP(email, otpCode);
 
       if (result.success) {
         toast({
           title: "Email verified successfully!",
-          description: "Setting up your account...",
+          description: "Redirecting to dashboard...",
         });
 
         onSuccess();
         await refreshSession();
-
-        // Get the current session to access user ID
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session?.user) {
-          setIsWaitingForAccount(true);
-
-          // Wait for account to be ready
-          const isReady = await pollForAccountReady(session.user.id);
-
-          if (isReady) {
-            navigate('/dashboard', { replace: true });
-          } else {
-            await logOTPError(
-              new Error('Account not ready after polling'),
-              'otp_verification_account_setup',
-              email
-            );
-          }
-        }
+        
+        // Direct navigation after successful verification
+        navigate('/dashboard', { replace: true });
       } else {
         await logOTPError(
           new Error(result.error?.message || 'OTP verification failed'),
@@ -75,7 +57,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
     } catch (error) {
       await logOTPError(error, 'otp_verification_exception', email);
     } finally {
-      setIsWaitingForAccount(false);
+      setIsProcessing(false);
     }
   };
 
@@ -135,19 +117,19 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
             className="text-center text-lg font-mono tracking-widest usergy-input"
             maxLength={6}
             required
-            disabled={isVerifying || isWaitingForAccount}
+            disabled={isVerifying || isProcessing}
           />
         </div>
 
         <Button 
           type="submit" 
           className="w-full usergy-btn-primary"
-          disabled={isVerifying || isWaitingForAccount || otpCode.length !== 6}
+          disabled={isVerifying || isProcessing || otpCode.length !== 6}
         >
-          {isVerifying || isWaitingForAccount ? (
+          {isVerifying || isProcessing ? (
             <div className="flex items-center space-x-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>{isVerifying ? 'Verifying...' : 'Setting up your account...'}</span>
+              <span>Verifying...</span>
             </div>
           ) : (
             'Verify Email'
@@ -186,7 +168,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           variant="ghost"
           onClick={onBack}
           className="text-muted-foreground hover:text-foreground"
-          disabled={isVerifying || isWaitingForAccount}
+          disabled={isVerifying || isProcessing}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Sign Up

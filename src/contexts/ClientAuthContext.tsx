@@ -24,6 +24,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
+  const [checkingClientStatus, setCheckingClientStatus] = useState(false);
   const { logAuthError } = useErrorLogger();
 
   const diagnoseAccount = async (userId: string) => {
@@ -48,14 +49,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const checkClientStatus = async (userId: string): Promise<boolean> => {
+    if (checkingClientStatus) {
+      console.log('Client status check already in progress, skipping...');
+      return isClientAccount;
+    }
+
     try {
+      setCheckingClientStatus(true);
       console.log('Checking client status for user:', userId);
-      
-      // First run diagnosis
-      const diagnosis = await diagnoseAccount(userId);
-      if (diagnosis) {
-        console.log('Account diagnosis:', diagnosis);
-      }
       
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
@@ -64,22 +65,8 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       if (error) {
         console.error('Error checking client status:', error);
         await logAuthError(error, 'check_client_status');
-        
-        // If the regular check fails, try force creating the account
-        console.log('Attempting to force create client account...');
-        const { data: forceResult, error: forceError } = await supabase.rpc('force_create_client_account', {
-          user_id_param: userId
-        });
-
-        if (forceError) {
-          console.error('Error force creating client account:', forceError);
-          setIsClientAccount(false);
-          return false;
-        }
-
-        console.log('Force create result:', forceResult);
-        setIsClientAccount(true);
-        return true;
+        setIsClientAccount(false);
+        return false;
       }
 
       const isClientAcc = Boolean(isClient);
@@ -91,6 +78,8 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       await logAuthError(error, 'check_client_status_exception');
       setIsClientAccount(false);
       return false;
+    } finally {
+      setCheckingClientStatus(false);
     }
   };
 
@@ -155,18 +144,12 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
 
       console.log('Auth state changed:', event, session ? session.user.email : 'no session');
+      
       setSession(session);
       setUser(session?.user ?? null);
 
       if (event === 'SIGNED_IN' && session?.user) {
         console.log('User signed in, checking client status...');
-        
-        // For Google OAuth, give extra time for the trigger to complete
-        if (session.user.app_metadata?.provider === 'google') {
-          console.log('Google OAuth sign-in detected, waiting for account creation...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
         await checkClientStatus(session.user.id);
       } else if (event === 'SIGNED_OUT') {
         console.log('User signed out');
