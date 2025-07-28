@@ -8,13 +8,12 @@ interface ClientAuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isClientAccount: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signInWithGoogle: () => Promise<{ error: any }>;
   signOut: () => Promise<void>;
-  isClientAccount: boolean;
   refreshSession: () => Promise<void>;
-  checkClientStatus: (userId: string) => Promise<boolean>;
-  diagnoseAccount: (userId: string) => Promise<any>;
+  waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -24,95 +23,150 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
-  const checkInProgressRef = useRef(false);
-  const lastCheckRef = useRef<{ userId: string; result: boolean; timestamp: number } | null>(null);
-  const initializationCompleteRef = useRef(false);
+  const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
-  
-  // Cache duration in milliseconds (30 seconds)
-  const CACHE_DURATION = 30000;
 
-  const diagnoseAccount = async (userId: string) => {
-    try {
-      console.log('Running account diagnosis for user:', userId);
-      
-      const { data: diagnosisResult, error } = await supabase.rpc('diagnose_user_account', {
-        user_id_param: userId
-      });
+  // Wait for client account with retries
+  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 5): Promise<boolean> => {
+    console.log(`Waiting for client account creation for user: ${userId}`);
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`Attempt ${attempt}/${maxAttempts} to verify client account...`);
+        
+        const { data: isClient, error } = await supabase.rpc('is_client_account', {
+          user_id_param: userId
+        });
 
-      if (error) {
-        console.error('Error diagnosing account:', error);
-        return null;
+        if (error) {
+          console.error('Error checking client status:', error);
+          if (attempt === maxAttempts) {
+            await logAuthError(error, 'check_client_status_final_attempt');
+            return false;
+          }
+        } else if (isClient) {
+          console.log('Client account confirmed!');
+          setIsClientAccount(true);
+          return true;
+        }
+
+        // If not last attempt, wait before retrying
+        if (attempt < maxAttempts) {
+          const delay = attempt * 1000; // Exponential backoff
+          console.log(`Waiting ${delay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        console.error(`Exception on attempt ${attempt}:`, error);
+        if (attempt === maxAttempts) {
+          await logAuthError(error, 'check_client_status_exception');
+        }
       }
-
-      console.log('Account diagnosis result:', diagnosisResult);
-      return diagnosisResult;
-    } catch (error) {
-      console.error('Exception diagnosing account:', error);
-      return null;
-    }
-  };
-
-  const checkClientStatus = useCallback(async (userId: string): Promise<boolean> => {
-    // Check cache first
-    if (lastCheckRef.current && 
-        lastCheckRef.current.userId === userId && 
-        Date.now() - lastCheckRef.current.timestamp < CACHE_DURATION) {
-      console.log('ClientAuth: Using cached client status:', lastCheckRef.current.result);
-      return lastCheckRef.current.result;
     }
 
-    // Prevent concurrent checks
-    if (checkInProgressRef.current) {
-      console.log('ClientAuth: Check already in progress, waiting...');
-      // Wait for the current check to complete
-      await new Promise(resolve => setTimeout(resolve, 100));
-      return isClientAccount;
-    }
+    console.log('Client account not found after all attempts');
+    setIsClientAccount(false);
+    return false;
+  }, [logAuthError]);
 
-    checkInProgressRef.current = true;
+  // Initialize auth state
+  const initializeAuth = useCallback(async () => {
+    // Prevent multiple initializations
+    if (initializingRef.current) {
+      console.log('Already initializing auth, skipping...');
+      return;
+    }
+    
+    initializingRef.current = true;
+    console.log('Initializing authentication...');
 
     try {
-      console.log('ClientAuth: Checking client status for user:', userId);
-      
-      const { data: isClient, error } = await supabase.rpc('is_client_account', {
-        user_id_param: userId
-      });
-
-      if (error) {
-        console.error('ClientAuth: Error checking status:', error);
-        await logAuthError(error, 'check_client_status');
-        return false;
-      }
-
-      const result = Boolean(isClient);
-      console.log('ClientAuth: Client status result:', result);
-      
-      // Update cache
-      lastCheckRef.current = {
-        userId,
-        result,
-        timestamp: Date.now()
-      };
-      
-      setIsClientAccount(result);
-      return result;
-    } catch (error) {
-      console.error('ClientAuth: Exception checking status:', error);
-      await logAuthError(error, 'check_client_status_exception');
-      return false;
-    } finally {
-      checkInProgressRef.current = false;
-    }
-  }, [isClientAccount, logAuthError]);
-
-  const refreshSession = useCallback(async () => {
-    try {
-      console.log('ClientAuth: Refreshing session...');
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
-        console.error('ClientAuth: Error refreshing session:', error);
+        console.error('Error getting initial session:', error);
+        await logAuthError(error, 'initialize_auth');
+      } else if (session?.user) {
+        console.log('Found existing session for:', session.user.email);
+        setSession(session);
+        setUser(session.user);
+        
+        // Check if user is a client
+        const isClient = await waitForClientAccount(session.user.id, 3);
+        console.log('Initial client status:', isClient);
+      } else {
+        console.log('No existing session found');
+      }
+    } catch (error) {
+      console.error('Exception during auth initialization:', error);
+      await logAuthError(error, 'initialize_auth_exception');
+    } finally {
+      setLoading(false);
+      initializingRef.current = false;
+    }
+  }, [waitForClientAccount, logAuthError]);
+
+  // Set up auth listener
+  useEffect(() => {
+    let mounted = true;
+
+    // Initialize immediately
+    initializeAuth();
+
+    // Set up listener for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!mounted) return;
+
+      console.log('Auth state changed:', event, newSession?.user?.email);
+
+      // Update session immediately
+      setSession(newSession);
+      setUser(newSession?.user ?? null);
+
+      if (event === 'SIGNED_IN' && newSession?.user) {
+        // For sign in events, ensure client account exists
+        console.log('User signed in, ensuring client account...');
+        
+        // First try to create account if it doesn't exist
+        const { data: ensureResult } = await supabase.rpc('ensure_client_account', {
+          user_id_param: newSession.user.id,
+          company_name_param: newSession.user.user_metadata?.companyName || 'My Company',
+          first_name_param: newSession.user.user_metadata?.contactFirstName || 
+                           newSession.user.user_metadata?.full_name?.split(' ')[0] || '',
+          last_name_param: newSession.user.user_metadata?.contactLastName || 
+                          newSession.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+        });
+
+        if (ensureResult?.success) {
+          console.log('Client account ensured successfully');
+        }
+
+        // Then verify with retries
+        const isClient = await waitForClientAccount(newSession.user.id);
+        console.log('Client status after sign in:', isClient);
+        
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
+        setIsClientAccount(false);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [initializeAuth, waitForClientAccount]);
+
+  // Refresh session manually
+  const refreshSession = useCallback(async () => {
+    console.log('Manually refreshing session...');
+    
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error('Error refreshing session:', error);
         await logAuthError(error, 'refresh_session');
         return;
       }
@@ -121,92 +175,21 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        console.log('ClientAuth: Session refreshed, checking client status...');
-        await checkClientStatus(session.user.id);
+        const isClient = await waitForClientAccount(session.user.id, 3);
+        console.log('Client status after refresh:', isClient);
       } else {
         setIsClientAccount(false);
-        lastCheckRef.current = null;
       }
     } catch (error) {
-      console.error('ClientAuth: Exception refreshing session:', error);
+      console.error('Exception refreshing session:', error);
       await logAuthError(error, 'refresh_session_exception');
     }
-  }, [checkClientStatus, logAuthError]);
+  }, [waitForClientAccount, logAuthError]);
 
-  const initializeAuth = useCallback(async () => {
-    try {
-      console.log('ClientAuth: Initializing authentication...');
-      
-      // Get current session
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('ClientAuth: Error getting session:', error);
-        await logAuthError(error, 'initialize_auth');
-        return;
-      }
-
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        console.log('ClientAuth: Session found, checking client status...');
-        await checkClientStatus(session.user.id);
-      } else {
-        console.log('ClientAuth: No session found');
-        setIsClientAccount(false);
-        lastCheckRef.current = null;
-      }
-    } catch (error) {
-      console.error('ClientAuth: Exception initializing auth:', error);
-      await logAuthError(error, 'initialize_auth_exception');
-    } finally {
-      initializationCompleteRef.current = true;
-      setLoading(false);
-    }
-  }, [checkClientStatus, logAuthError]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    // Set up auth state listener first
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-
-      console.log('ClientAuth: Auth state changed:', event, session?.user?.email);
-      
-      // Update session and user state immediately
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.log('ClientAuth: User signed in, checking client status...');
-        await checkClientStatus(session.user.id);
-      } else if (event === 'SIGNED_OUT') {
-        console.log('ClientAuth: User signed out, clearing client status...');
-        setIsClientAccount(false);
-        lastCheckRef.current = null;
-      }
-
-      // Only set loading to false after initial session check
-      if (event !== 'INITIAL_SESSION' || initializationCompleteRef.current) {
-        setLoading(false);
-      }
-    });
-
-    // Initialize auth state
-    initializeAuth();
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, [initializeAuth, checkClientStatus]);
-
+  // Sign in method
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('ClientAuth: Signing in with email:', email);
-      setLoading(true);
+      console.log('Signing in with email:', email);
       
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -214,27 +197,24 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       });
 
       if (error) {
-        console.error('ClientAuth: Sign in error:', error);
+        console.error('Sign in error:', error);
         await logAuthError(error, 'sign_in');
-        setLoading(false);
         return { error };
       }
 
-      console.log('ClientAuth: Sign in successful');
-      // Loading will be set to false by the auth state change listener
+      // Auth state change will handle the rest
       return { error: null };
     } catch (error) {
-      console.error('ClientAuth: Sign in exception:', error);
+      console.error('Sign in exception:', error);
       await logAuthError(error, 'sign_in_exception');
-      setLoading(false);
       return { error };
     }
   };
 
+  // Sign in with Google
   const signInWithGoogle = async () => {
     try {
-      console.log('ClientAuth: Initiating Google OAuth sign-in...');
-      setLoading(true);
+      console.log('Initiating Google OAuth...');
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -248,41 +228,34 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       });
 
       if (error) {
-        console.error('ClientAuth: Google OAuth error:', error);
+        console.error('Google OAuth error:', error);
         await logAuthError(error, 'google_sign_in');
-        setLoading(false);
         return { error };
       }
 
-      console.log('ClientAuth: Google OAuth initiated successfully');
       return { error: null };
     } catch (error) {
-      console.error('ClientAuth: Google OAuth exception:', error);
+      console.error('Google OAuth exception:', error);
       await logAuthError(error, 'google_sign_in_exception');
-      setLoading(false);
       return { error: { message: 'Failed to sign in with Google' } };
     }
   };
 
+  // Sign out
   const signOut = async () => {
     try {
-      console.log('ClientAuth: Signing out...');
-      setLoading(true);
-      
+      console.log('Signing out...');
       await supabase.auth.signOut();
       
-      // Clear state immediately
+      // Clear state
       setUser(null);
       setSession(null);
       setIsClientAccount(false);
-      lastCheckRef.current = null;
       
-      setLoading(false);
       window.location.href = '/';
     } catch (error) {
-      console.error('ClientAuth: Sign out error:', error);
+      console.error('Sign out error:', error);
       await logAuthError(error, 'sign_out');
-      setLoading(false);
     }
   };
 
@@ -290,13 +263,12 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     user,
     session,
     loading,
+    isClientAccount,
     signIn,
     signInWithGoogle,
     signOut,
-    isClientAccount,
     refreshSession,
-    checkClientStatus,
-    diagnoseAccount,
+    waitForClientAccount,
   };
 
   return (

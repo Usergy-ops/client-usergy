@@ -7,6 +7,9 @@ import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useOTPVerification } from '@/hooks/useOTPVerification';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
+import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface OTPVerificationProps {
   email: string;
@@ -18,6 +21,8 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [otpCode, setOtpCode] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { refreshSession } = useClientAuth();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
@@ -38,14 +43,38 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Setting up your account...",
         });
 
-        // Call onSuccess to trigger any cleanup
-        onSuccess();
+        // CRITICAL: Wait for session to be established
+        console.log('OTP verified, waiting for session...');
         
-        // Use a small delay to ensure toast is visible
-        setTimeout(() => {
-          // Navigate to auth callback for proper account setup
-          window.location.href = '/auth/callback';
-        }, 1000);
+        // Give Supabase time to set cookies
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Force session refresh
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError || !session) {
+          console.error('Failed to get session after OTP verification');
+          toast({
+            title: "Session Error",
+            description: "Please try signing in again.",
+            variant: "destructive"
+          });
+          navigate('/', { replace: true });
+          return;
+        }
+
+        console.log('Session confirmed, refreshing auth context...');
+        
+        // Refresh the auth context
+        await refreshSession();
+        
+        // Small delay to ensure context is updated
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Navigate using React Router
+        console.log('Navigating to dashboard...');
+        navigate('/dashboard', { replace: true });
+        
       } else {
         await logOTPError(
           new Error(result.error?.message || 'OTP verification failed'),
