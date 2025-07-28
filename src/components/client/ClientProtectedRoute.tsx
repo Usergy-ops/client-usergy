@@ -2,7 +2,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
+import { supabase } from '@/lib/supabase';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
@@ -10,7 +10,6 @@ interface ClientProtectedRouteProps {
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
   const { user, loading } = useClientAuth();
-  const { pollForAccountReady } = useClientAccountStatus();
   const navigate = useNavigate();
   const [accountStatus, setAccountStatus] = useState<{
     isReady: boolean;
@@ -22,10 +21,51 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     error: null,
   });
 
+  const pollForAccountReady = async (userId: string, maxAttempts = 8): Promise<boolean> => {
+    console.log('Polling for account readiness for user:', userId);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`Account check attempt ${attempt}/${maxAttempts}`);
+
+      try {
+        const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
+          user_id_param: userId
+        });
+
+        if (checkError) {
+          console.error('Error checking account status:', checkError);
+        } else {
+          const isReady = Boolean(isClient);
+          console.log('Account status check result:', isReady);
+          
+          if (isReady) {
+            console.log('Account is ready!');
+            return true;
+          }
+        }
+
+        if (attempt < maxAttempts) {
+          // Wait before next attempt, with exponential backoff
+          const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 4000);
+          console.log(`Waiting ${delay}ms before next attempt...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (pollError) {
+        console.error('Error during polling:', pollError);
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    console.log('Account not ready after polling');
+    return false;
+  };
+
   useEffect(() => {
     const checkAccountReady = async () => {
       if (loading) return;
-      
+
       if (!user) {
         console.log('No authenticated user, redirecting to home');
         navigate('/', { replace: true });
@@ -36,7 +76,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
 
       try {
         const isReady = await pollForAccountReady(user.id);
-        
+
         if (isReady) {
           setAccountStatus({ isReady: true, isLoading: false, error: null });
         } else {
@@ -56,7 +96,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     };
 
     checkAccountReady();
-  }, [user, loading, navigate, pollForAccountReady]);
+  }, [user, loading, navigate]);
 
   if (loading || accountStatus.isLoading) {
     return (

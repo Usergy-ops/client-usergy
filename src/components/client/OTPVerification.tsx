@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
 
 interface OTPVerificationProps {
   email: string;
@@ -24,12 +23,52 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [isWaitingForAccount, setIsWaitingForAccount] = useState(false);
   const { toast } = useToast();
   const { refreshSession } = useClientAuth();
-  const { pollForAccountReady } = useClientAccountStatus();
   const navigate = useNavigate();
+
+  const pollForAccountReady = async (userId: string, maxAttempts = 8): Promise<boolean> => {
+    console.log('Polling for account readiness for user:', userId);
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`Account check attempt ${attempt}/${maxAttempts}`);
+
+      try {
+        const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
+          user_id_param: userId
+        });
+
+        if (checkError) {
+          console.error('Error checking account status:', checkError);
+        } else {
+          const isReady = Boolean(isClient);
+          console.log('Account status check result:', isReady);
+          
+          if (isReady) {
+            console.log('Account is ready!');
+            return true;
+          }
+        }
+
+        if (attempt < maxAttempts) {
+          // Wait before next attempt, with exponential backoff
+          const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 4000);
+          console.log(`Waiting ${delay}ms before next attempt...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (pollError) {
+        console.error('Error during polling:', pollError);
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    console.log('Account not ready after polling');
+    return false;
+  };
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!otpCode || otpCode.length !== 6) {
       setError('Please enter a valid 6-digit verification code');
       return;
@@ -37,10 +76,10 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
     setLoading(true);
     setError('');
-    
+
     try {
       console.log('Verifying OTP for:', email);
-      
+
       const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
         body: { 
           email,
@@ -56,26 +95,26 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
       if (data && data.success) {
         console.log('OTP verification successful');
-        
+
         toast({
           title: "Email verified successfully!",
           description: "Setting up your account...",
         });
-        
+
         onSuccess();
-        
+
         // Refresh session to get the updated user
         await refreshSession();
-        
+
         // Get the current session to access user ID
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (session?.user) {
           setIsWaitingForAccount(true);
-          
+
           // Wait for account to be ready
           const isReady = await pollForAccountReady(session.user.id);
-          
+
           if (isReady) {
             console.log('Account is ready, navigating to dashboard');
             navigate('/dashboard', { replace: true });
@@ -86,7 +125,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         } else {
           setError('Session not found. Please try signing in again.');
         }
-        
+
       } else {
         console.error('OTP verification failed:', data);
         setError(data?.error || 'Invalid verification code. Please try again.');
@@ -103,7 +142,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const handleResendCode = async () => {
     setResendLoading(true);
     setError('');
-    
+
     try {
       const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
         body: { email }
@@ -175,9 +214,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           {loading || isWaitingForAccount ? (
             <div className="flex items-center space-x-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>
-                {loading ? 'Verifying...' : 'Setting up your account...'}
-              </span>
+              <span>{loading ? 'Verifying...' : 'Setting up your account...'}</span>
             </div>
           ) : (
             'Verify Email'
@@ -193,7 +230,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           type="button"
           variant="outline"
           onClick={handleResendCode}
-          disabled={resendLoading || loading || isWaitingForAccount}
+          disabled={resendLoading}
           className="w-full"
         >
           {resendLoading ? (

@@ -25,35 +25,42 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const checkClientStatus = async (userId: string): Promise<boolean> => {
     try {
+      console.log('Checking client status for user:', userId);
+      
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
       });
-      
+
       if (error) {
         console.error('Error checking client status:', error);
+        setIsClientAccount(false);
         return false;
       }
-      
+
       const isClientAcc = Boolean(isClient);
+      console.log('Client status result:', isClientAcc);
       setIsClientAccount(isClientAcc);
       return isClientAcc;
     } catch (error) {
       console.error('Exception checking client status:', error);
+      setIsClientAccount(false);
       return false;
     }
   };
 
   const refreshSession = async () => {
     try {
+      console.log('Refreshing session...');
+      
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) {
         console.error('Error refreshing session:', error);
         return;
       }
-      
+
       setSession(session);
       setUser(session?.user ?? null);
-      
+
       if (session?.user) {
         await checkClientStatus(session.user.id);
       } else {
@@ -69,11 +76,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        console.log('Initializing auth...');
         
+        const { data: { session }, error } = await supabase.auth.getSession();
+
         if (error) {
           console.error('Error getting session:', error);
         } else if (session?.user && mounted) {
+          console.log('Initial session found:', session.user.id);
           setSession(session);
           setUser(session.user);
           await checkClientStatus(session.user.id);
@@ -91,19 +101,19 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-      
+
       console.log('Auth state change:', event, session?.user?.id);
-      
+
       setSession(session);
       setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        // Only check status, don't create accounts
+
+      if (event === 'SIGNED_IN' && session?.user) {
+        console.log('User signed in, checking client status...');
         await checkClientStatus(session.user.id);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setIsClientAccount(false);
       }
-      
+
       if (event !== 'INITIAL_SESSION') {
         setLoading(false);
       }
@@ -113,7 +123,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, []); // Remove all dependencies to prevent infinite loops
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -121,7 +131,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         email,
         password
       });
-      
+
       if (error) {
         console.error('Sign in error:', error);
         return { error };

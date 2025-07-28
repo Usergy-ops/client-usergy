@@ -72,14 +72,19 @@ async function handleClientSignup(req: Request): Promise<Response> {
   try {
     console.log('Starting signup process for:', email);
     
-    // Check if user already exists
-    const { data: existingUser, error: userCheckError } = await supabase
-      .from('auth.users')
-      .select('id')
-      .eq('email', email)
-      .single();
+    // FIXED: Use admin.listUsers instead of direct table access
+    const { data: existingUsers, error: userCheckError } = await supabase.auth.admin.listUsers();
 
-    if (existingUser && !userCheckError) {
+    if (userCheckError) {
+      console.error('Error checking existing users:', userCheckError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to check existing users. Please try again.' }),
+        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
+      );
+    }
+
+    const existingUser = existingUsers.users.find(u => u.email === email);
+    if (existingUser) {
       return new Response(
         JSON.stringify({ error: 'User with this email already exists' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }

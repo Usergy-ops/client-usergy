@@ -65,7 +65,8 @@ export function ClientSignUpForm() {
     setError('');
     
     try {
-      console.log('Starting signup process...');
+      console.log('Starting signup process for:', formData.email);
+      console.log('Form data:', { ...formData, password: '[HIDDEN]' });
       
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {

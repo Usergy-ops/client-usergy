@@ -4,59 +4,117 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Processing authentication...');
   const { refreshSession } = useClientAuth();
-  const { pollForAccountReady } = useClientAccountStatus();
 
   useEffect(() => {
+    let mounted = true;
+
     const handleCallback = async () => {
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log('Starting auth callback...');
         
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
         if (sessionError || !session) {
           console.error('No session found:', sessionError);
-          setError('Authentication failed. Please try again.');
-          setTimeout(() => navigate('/', { replace: true }), 3000);
+          if (mounted) {
+            setError('Authentication failed. Please try again.');
+            setTimeout(() => navigate('/', { replace: true }), 3000);
+          }
           return;
         }
 
         console.log('Session found, refreshing and waiting for account...');
-        setStatus('Setting up your account...');
-        
+        if (mounted) {
+          setStatus('Setting up your account...');
+        }
+
         // Refresh session to ensure we have the latest data
         await refreshSession();
-        
-        // Wait for account to be ready
-        const isReady = await pollForAccountReady(session.user.id);
-        
+
+        // Wait for account to be ready with polling
+        console.log('Polling for account readiness...');
+        let isReady = false;
+        let attempts = 0;
+        const maxAttempts = 10;
+
+        while (attempts < maxAttempts && mounted) {
+          attempts++;
+          console.log(`Account check attempt ${attempts}/${maxAttempts}`);
+
+          try {
+            const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
+              user_id_param: session.user.id
+            });
+
+            if (checkError) {
+              console.error('Error checking account status:', checkError);
+            } else {
+              isReady = Boolean(isClient);
+              console.log('Account status check result:', isReady);
+            }
+
+            if (isReady) {
+              console.log('Account is ready!');
+              break;
+            }
+
+            if (attempts < maxAttempts) {
+              // Wait before next attempt
+              const delay = Math.min(1000 * Math.pow(1.5, attempts - 1), 4000);
+              console.log(`Waiting ${delay}ms before next attempt...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
+          } catch (pollError) {
+            console.error('Error during polling:', pollError);
+            if (attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        }
+
+        if (!mounted) return;
+
         if (isReady) {
           console.log('Account is ready, navigating to dashboard');
           setStatus('Account ready! Redirecting...');
-          
+
           // Small delay to show success message
           setTimeout(() => {
-            navigate('/dashboard', { replace: true });
+            if (mounted) {
+              navigate('/dashboard', { replace: true });
+            }
           }, 1000);
         } else {
           console.error('Account not ready after polling');
           setError('Account setup took too long. Please try again.');
-          setTimeout(() => navigate('/', { replace: true }), 3000);
+          setTimeout(() => {
+            if (mounted) {
+              navigate('/', { replace: true });
+            }
+          }, 3000);
         }
-        
+
       } catch (error) {
         console.error('Auth callback error:', error);
-        setError('An unexpected error occurred. Please try again.');
-        setTimeout(() => navigate('/', { replace: true }), 3000);
+        if (mounted) {
+          setError('An unexpected error occurred. Please try again.');
+          setTimeout(() => navigate('/', { replace: true }), 3000);
+        }
       }
     };
 
     handleCallback();
-  }, [navigate, refreshSession, pollForAccountReady]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [navigate]); // Only depend on navigate to prevent infinite loops
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">
