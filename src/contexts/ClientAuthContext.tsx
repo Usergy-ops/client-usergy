@@ -27,7 +27,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
 
-  // Enhanced diagnose account function using new database function
+  // Enhanced diagnose account function
   const diagnoseAccount = useCallback(async (userId: string) => {
     console.log(`Diagnosing account for user: ${userId}`);
     
@@ -70,8 +70,8 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logAuthError]);
 
-  // Enhanced wait for client account with better error handling
-  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 5): Promise<boolean> => {
+  // Enhanced wait for client account with exponential backoff
+  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10): Promise<boolean> => {
     console.log(`Waiting for client account creation for user: ${userId}`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -95,9 +95,11 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
           return true;
         }
 
-        // If not last attempt, wait before retrying with exponential backoff
+        // Exponential backoff with jitter
         if (attempt < maxAttempts) {
-          const delay = Math.min(attempt * 1000, 5000); // Cap at 5 seconds
+          const baseDelay = Math.min(attempt * 1000, 5000);
+          const jitter = Math.random() * 1000;
+          const delay = baseDelay + jitter;
           console.log(`Waiting ${delay}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -115,17 +117,19 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     return false;
   }, [logAuthError]);
 
-  // Enhanced client account creation with robust error handling
+  // Enhanced client account creation with comprehensive error handling
   const ensureClientAccount = useCallback(async (userId: string, userMetadata: any) => {
     console.log('Ensuring client account for user:', userId);
     
     try {
       const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: userId,
-        company_name_param: userMetadata?.companyName || 'My Company',
+        company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
+          userMetadata?.first_name ||
           userMetadata?.full_name?.split(' ')[0] || '',
         last_name_param: userMetadata?.contactLastName || 
+          userMetadata?.last_name ||
           userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
       });
 
@@ -150,7 +154,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logAuthError]);
 
-  // Enhanced session initialization with better error handling
+  // Enhanced session initialization with retry logic
   const initializeAuth = useCallback(async () => {
     if (initializingRef.current) {
       console.log('Already initializing auth, skipping...');
@@ -161,7 +165,20 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     console.log('Initializing authentication...');
 
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      // Try to get session with retries
+      let sessionResult = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          sessionResult = await supabase.auth.getSession();
+          break;
+        } catch (error) {
+          console.error(`Session fetch attempt ${attempt} failed:`, error);
+          if (attempt === 3) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+      }
+
+      const { data: { session }, error } = sessionResult;
       
       if (error) {
         console.error('Error getting initial session:', error);
@@ -175,12 +192,17 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         setSession(session);
         setUser(session.user);
         
-        // Ensure client account exists before checking status
-        await ensureClientAccount(session.user.id, session.user.user_metadata);
+        // Ensure client account exists with enhanced error handling
+        const accountCreated = await ensureClientAccount(session.user.id, session.user.user_metadata);
         
-        // Check if user is a client with retries
-        const isClient = await waitForClientAccount(session.user.id, 3);
-        console.log('Initial client status:', isClient);
+        if (accountCreated) {
+          // Check client status with enhanced retry logic
+          const isClient = await waitForClientAccount(session.user.id, 5);
+          console.log('Initial client status:', isClient);
+        } else {
+          console.warn('Failed to ensure client account exists');
+          setIsClientAccount(false);
+        }
       } else {
         console.log('No existing session found');
         setSession(null);
@@ -196,7 +218,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, ensureClientAccount, logAuthError]);
 
-  // Enhanced auth state change handler
+  // Enhanced auth state change handler with comprehensive error handling
   const handleAuthStateChange = useCallback(async (event: string, newSession: Session | null) => {
     console.log('Auth state changed:', event, newSession?.user?.email);
 
@@ -204,30 +226,41 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     setSession(newSession);
     setUser(newSession?.user ?? null);
 
-    if (event === 'SIGNED_IN' && newSession?.user) {
-      console.log('User signed in, ensuring client account...');
-      
-      // Ensure client account exists
-      const accountCreated = await ensureClientAccount(newSession.user.id, newSession.user.user_metadata);
-      
-      if (accountCreated) {
-        // Verify client status with retries
-        const isClient = await waitForClientAccount(newSession.user.id, 5);
-        console.log('Client status after sign in:', isClient);
-      } else {
-        console.warn('Failed to create client account');
+    try {
+      if (event === 'SIGNED_IN' && newSession?.user) {
+        console.log('User signed in, ensuring client account...');
+        
+        // Ensure client account exists with enhanced error handling
+        const accountCreated = await ensureClientAccount(newSession.user.id, newSession.user.user_metadata);
+        
+        if (accountCreated) {
+          // Verify client status with enhanced retry logic
+          const isClient = await waitForClientAccount(newSession.user.id, 8);
+          console.log('Client status after sign in:', isClient);
+        } else {
+          console.warn('Failed to create client account');
+          setIsClientAccount(false);
+        }
+        
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out');
         setIsClientAccount(false);
+        
+      } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+        console.log('Token refreshed, verifying client status...');
+        const isClient = await waitForClientAccount(newSession.user.id, 3);
+        console.log('Client status after token refresh:', isClient);
+        
+      } else if (event === 'PASSWORD_RECOVERY' && newSession?.user) {
+        console.log('Password recovery, verifying client status...');
+        const isClient = await waitForClientAccount(newSession.user.id, 3);
+        console.log('Client status after password recovery:', isClient);
       }
-      
-    } else if (event === 'SIGNED_OUT') {
-      console.log('User signed out');
-      setIsClientAccount(false);
-    } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-      console.log('Token refreshed, verifying client status...');
-      const isClient = await waitForClientAccount(newSession.user.id, 2);
-      console.log('Client status after token refresh:', isClient);
+    } catch (error) {
+      console.error('Error in auth state change handler:', error);
+      await logAuthError(error, `auth_state_change_${event}`);
     }
-  }, [ensureClientAccount, waitForClientAccount]);
+  }, [ensureClientAccount, waitForClientAccount, logAuthError]);
 
   // Set up auth listener and initialization
   useEffect(() => {
@@ -254,7 +287,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     };
   }, [initializeAuth, handleAuthStateChange]);
 
-  // Enhanced session refresh
+  // Enhanced session refresh with retry logic
   const refreshSession = useCallback(async () => {
     console.log('Manually refreshing session...');
     
@@ -283,7 +316,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, logAuthError]);
 
-  // Enhanced sign in with better error handling
+  // Enhanced sign in with comprehensive error handling
   const signIn = async (email: string, password: string) => {
     try {
       console.log('Signing in with email:', email);

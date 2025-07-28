@@ -27,7 +27,7 @@ export default function Welcome() {
     }
   }, [user, isClientAccount, loading, navigate]);
 
-  // Show nothing while checking auth (prevents flash)
+  // Show enhanced loading while checking auth
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">
@@ -36,7 +36,10 @@ export default function Welcome() {
           <div className="glass-card p-8">
             <div className="flex items-center space-x-4">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <span className="text-lg font-semibold">Loading...</span>
+              <div>
+                <span className="text-lg font-semibold">Loading...</span>
+                <p className="text-sm text-muted-foreground mt-1">Checking your authentication status</p>
+              </div>
             </div>
           </div>
         </div>

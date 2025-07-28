@@ -19,13 +19,13 @@ export default function AuthCallback() {
       
       try {
         // Wait for auth to settle
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Refresh session to ensure we have latest state
         await refreshSession();
         
         // Give context time to update
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Navigate based on final state
         if (user && session) {
@@ -34,7 +34,7 @@ export default function AuthCallback() {
             navigate('/dashboard', { replace: true });
           } else {
             console.log('AuthCallback: User authenticated but not client, waiting for account...');
-            const isClient = await waitForClientAccount(user.id, 10);
+            const isClient = await waitForClientAccount(user.id, 15);
             if (isClient) {
               console.log('AuthCallback: Client account confirmed, redirecting to dashboard');
               navigate('/dashboard', { replace: true });
