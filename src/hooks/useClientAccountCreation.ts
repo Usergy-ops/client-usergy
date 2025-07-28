@@ -21,38 +21,26 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId);
       
-      let retryCount = 0;
-      const maxRetries = 5;
-      
-      while (retryCount < maxRetries) {
-        try {
-          const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
-            user_id_param: userId,
-            company_name_param: userMetadata?.companyName || 'My Company',
-            first_name_param: userMetadata?.contactFirstName || 
-              userMetadata?.full_name?.split(' ')[0] || '',
-            last_name_param: userMetadata?.contactLastName || 
-              userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
-          });
+      // Use the new safe account creation function
+      const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
+        user_id_param: userId,
+        company_name_param: userMetadata?.companyName || 'My Company',
+        first_name_param: userMetadata?.contactFirstName || 
+          userMetadata?.full_name?.split(' ')[0] || '',
+        last_name_param: userMetadata?.contactLastName || 
+          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
+      });
 
-          if (createError) {
-            throw createError;
-          }
+      if (createError) {
+        throw createError;
+      }
 
-          console.log('Client account created successfully');
-          setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
-          return { success: true };
-        } catch (accountError) {
-          retryCount++;
-          console.error(`Account creation attempt ${retryCount} failed:`, accountError);
-          
-          if (retryCount >= maxRetries) {
-            throw accountError;
-          }
-          
-          // Exponential backoff
-          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount - 1)));
-        }
+      if (createResult?.success) {
+        console.log('Client account created successfully');
+        setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
+        return { success: true };
+      } else {
+        throw new Error(createResult?.error || 'Account creation failed');
       }
     } catch (error) {
       console.error('Client account creation failed:', error);

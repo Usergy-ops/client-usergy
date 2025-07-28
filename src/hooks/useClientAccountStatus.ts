@@ -62,8 +62,8 @@ export function useClientAccountStatus() {
       }
 
       if (attempt < maxAttempts) {
-        // Reduced delay and exponential backoff
-        const delay = Math.min(1000 * Math.pow(1.3, attempt - 1), 2000);
+        // Short delay between attempts
+        const delay = 1000 * attempt;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }

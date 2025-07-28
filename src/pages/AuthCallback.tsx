@@ -16,7 +16,7 @@ export default function AuthCallback() {
 
     const handleCallback = async () => {
       try {
-        console.log('Starting auth callback...');
+        console.log('Starting enhanced auth callback...');
         
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
@@ -38,17 +38,29 @@ export default function AuthCallback() {
         // Refresh session to ensure we have the latest data
         await refreshSession();
 
-        // For Google OAuth, give time for the database trigger to complete
+        // For Google OAuth, use the safe account creation function
         if (session.user.app_metadata?.provider === 'google') {
-          console.log('Google OAuth detected, waiting for account creation...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log('Google OAuth detected, ensuring account creation...');
+          
+          const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
+            user_id_param: session.user.id,
+            company_name_param: 'My Company',
+            first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || '',
+            last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+          });
+
+          if (createError) {
+            console.error('Error creating client account:', createError);
+          } else {
+            console.log('Account creation result:', createResult);
+          }
         }
 
-        // Check if account is ready with limited polling
+        // Check if account is ready with improved logic
         console.log('Checking account readiness...');
         let isReady = false;
         let attempts = 0;
-        const maxAttempts = 5; // Reduced from 10
+        const maxAttempts = 3; // Reduced attempts
 
         while (attempts < maxAttempts && mounted) {
           attempts++;
@@ -61,15 +73,15 @@ export default function AuthCallback() {
 
             if (checkError) {
               console.error('Error checking account status:', checkError);
-              // Don't try to force create on every error - just log it
+              // On final attempt, try to create account
               if (attempts === maxAttempts) {
-                console.log('Max attempts reached, trying force create...');
-                const { data: forceResult, error: forceError } = await supabase.rpc('force_create_client_account', {
+                console.log('Final attempt - trying safe account creation...');
+                const { data: safeResult, error: safeError } = await supabase.rpc('create_client_account_safe', {
                   user_id_param: session.user.id
                 });
 
-                if (!forceError && forceResult) {
-                  console.log('Force create successful');
+                if (!safeError && safeResult?.success) {
+                  console.log('Safe account creation successful');
                   isReady = true;
                   break;
                 }
@@ -85,14 +97,14 @@ export default function AuthCallback() {
             }
 
             if (attempts < maxAttempts) {
-              const delay = Math.min(1000 * Math.pow(1.2, attempts - 1), 3000); // Reduced delay
+              const delay = 1000 * attempts; // Linear backoff
               console.log(`Waiting ${delay}ms before next attempt...`);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
           } catch (pollError) {
             console.error('Error during polling:', pollError);
             if (attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 1500));
+              await new Promise(resolve => setTimeout(resolve, 1000));
             }
           }
         }
@@ -105,7 +117,7 @@ export default function AuthCallback() {
           navigate('/dashboard', { replace: true });
         } else {
           console.error('Account not ready after polling');
-          setError('Account setup took too long. Please try signing in again.');
+          setError('Account setup encountered an issue. Please try signing in again.');
           setTimeout(() => {
             if (mounted) {
               navigate('/', { replace: true });

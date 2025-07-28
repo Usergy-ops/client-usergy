@@ -29,14 +29,19 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
         return;
       }
 
-      // Brief check without polling
+      // Single verification check
       setIsVerifying(true);
       try {
         console.log('Verifying client account status...');
-        // Just check once - no polling here
-        const { data: isClient } = await supabase.rpc('is_client_account', {
+        const { data: isClient, error } = await supabase.rpc('is_client_account', {
           user_id_param: user.id
         });
+
+        if (error) {
+          console.error('Error verifying client status:', error);
+          navigate('/', { replace: true });
+          return;
+        }
 
         if (Boolean(isClient)) {
           console.log('User verified as client');
@@ -46,7 +51,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
           navigate('/', { replace: true });
         }
       } catch (error) {
-        console.error('Error verifying client status:', error);
+        console.error('Exception verifying client status:', error);
         navigate('/', { replace: true });
       } finally {
         setIsVerifying(false);
