@@ -1,7 +1,7 @@
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { useNavigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
@@ -9,27 +9,6 @@ interface ClientProtectedRouteProps {
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
   const { user, loading, isClientAccount } = useClientAuth();
-  const navigate = useNavigate();
-  const [shouldRender, setShouldRender] = useState(false);
-
-  useEffect(() => {
-    if (!loading) {
-      if (!user) {
-        console.log('ClientProtectedRoute: No user, redirecting to home');
-        navigate('/', { replace: true });
-        return;
-      }
-      
-      if (!isClientAccount) {
-        console.log('ClientProtectedRoute: Not a client account, redirecting to home');
-        navigate('/', { replace: true });
-        return;
-      }
-      
-      // User is authenticated and is a client account
-      setShouldRender(true);
-    }
-  }, [user, loading, isClientAccount, navigate]);
 
   if (loading) {
     return (
@@ -44,9 +23,16 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     );
   }
 
-  if (!shouldRender) {
-    return null;
+  // Not authenticated
+  if (!user) {
+    return <Navigate to="/" replace />;
   }
 
+  // Authenticated but not a client account
+  if (!isClientAccount) {
+    return <Navigate to="/" replace />;
+  }
+
+  // Authenticated and is a client
   return <>{children}</>;
 }
