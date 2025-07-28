@@ -58,17 +58,19 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         
         toast({
           title: "Email verified successfully!",
-          description: "Welcome to Usergy Client Portal.",
+          description: "Setting up your account...",
         });
         
-        // Refresh session to get the latest user data
+        // Refresh session to trigger the account creation process
         await refreshSession();
         
         onSuccess();
         
-        // Use React Router navigation instead of window.location
-        console.log('Navigating to dashboard...');
-        navigate('/dashboard', { replace: true });
+        // Wait a bit for the account creation to complete before navigating
+        setTimeout(() => {
+          console.log('Navigating to dashboard...');
+          navigate('/dashboard', { replace: true });
+        }, 2000);
         
       } else {
         console.error('OTP verification failed:', data);
@@ -161,7 +163,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           {loading ? (
             <div className="flex items-center space-x-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>Verifying...</span>
+              <span>Verifying & Setting Up Account...</span>
             </div>
           ) : (
             'Verify Email'

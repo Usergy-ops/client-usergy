@@ -9,7 +9,7 @@ export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Processing authentication...');
-  const { refreshSession } = useClientAuth();
+  const { refreshSession, accountCreationStatus } = useClientAuth();
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -23,51 +23,43 @@ export default function AuthCallback() {
           return;
         }
 
-        console.log('Session found, creating client account...');
+        console.log('Session found, refreshing session to trigger account creation...');
         setStatus('Setting up your account...');
         
-        // Use the RPC function to create the client account with retry logic
+        // Refresh session to trigger the account creation process in ClientAuthContext
+        await refreshSession();
+        
+        // Wait for account creation to complete
+        console.log('Waiting for account creation to complete...');
         let retryCount = 0;
-        const maxRetries = 3;
+        const maxRetries = 10;
         
         while (retryCount < maxRetries) {
-          try {
-            const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
-              user_id_param: session.user.id,
-              company_name_param: session.user.user_metadata?.companyName || 'My Company',
-              first_name_param: session.user.user_metadata?.contactFirstName || 
-                session.user.user_metadata?.full_name?.split(' ')[0] || '',
-              last_name_param: session.user.user_metadata?.contactLastName || 
-                session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
-            });
-
-            if (createError) {
-              throw createError;
-            }
-
-            console.log('Client account created successfully');
+          if (accountCreationStatus.isComplete) {
+            console.log('Account creation completed successfully');
             break;
-          } catch (accountError) {
-            retryCount++;
-            console.error(`Account creation attempt ${retryCount} failed:`, accountError);
-            
-            if (retryCount >= maxRetries) {
-              console.error('Max retries reached for account creation');
-              setError('Account setup failed. Please try again.');
-              setTimeout(() => navigate('/', { replace: true }), 3000);
-              return;
-            }
-            
-            // Wait before retrying
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
           }
+          
+          if (accountCreationStatus.error) {
+            console.error('Account creation failed:', accountCreationStatus.error);
+            setError('Account setup failed. Please try again.');
+            setTimeout(() => navigate('/', { replace: true }), 3000);
+            return;
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          retryCount++;
+        }
+        
+        if (retryCount >= maxRetries) {
+          console.error('Account creation timeout');
+          setError('Account setup took too long. Please try again.');
+          setTimeout(() => navigate('/', { replace: true }), 3000);
+          return;
         }
 
-        console.log('Account setup complete');
+        console.log('Account setup complete, navigating to dashboard');
         setStatus('Account created! Redirecting...');
-        
-        // Refresh session to ensure the new account data is loaded
-        await refreshSession();
         
         // Small delay to ensure everything is set up
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -82,7 +74,7 @@ export default function AuthCallback() {
     };
 
     handleCallback();
-  }, [navigate, refreshSession]);
+  }, [navigate, refreshSession, accountCreationStatus]);
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">
@@ -97,7 +89,9 @@ export default function AuthCallback() {
           <>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-lg font-semibold text-foreground">{status}</p>
-            <p className="text-sm text-muted-foreground mt-2">Almost there...</p>
+            <p className="text-sm text-muted-foreground mt-2">
+              {accountCreationStatus.isCreating ? 'Creating your client account...' : 'Almost there...'}
+            </p>
           </>
         )}
       </div>

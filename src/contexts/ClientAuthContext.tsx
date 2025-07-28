@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { useClientAccountCreation } from '@/hooks/useClientAccountCreation';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -12,6 +13,11 @@ interface ClientAuthContextType {
   signOut: () => Promise<void>;
   isClientAccount: boolean;
   refreshSession: () => Promise<void>;
+  accountCreationStatus: {
+    isCreating: boolean;
+    isComplete: boolean;
+    error: string | null;
+  };
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -21,6 +27,14 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
+  
+  const { 
+    isCreating: accountCreating, 
+    isComplete: accountComplete, 
+    error: accountError,
+    createClientAccount,
+    reset: resetAccountCreation
+  } = useClientAccountCreation();
 
   const checkClientAuth = async (userId: string, retryCount = 0): Promise<boolean> => {
     try {
@@ -34,9 +48,9 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         console.error('Error checking client auth:', error);
         
         // Retry logic for temporary failures
-        if (retryCount < 3) {
+        if (retryCount < 5) {
           console.log('Retrying client auth check...');
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
           return checkClientAuth(userId, retryCount + 1);
         }
         
@@ -51,9 +65,9 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       console.error('Error in checkClientAuth:', error);
       
       // Retry logic for network errors
-      if (retryCount < 3) {
+      if (retryCount < 5) {
         console.log('Retrying client auth check due to network error...');
-        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
         return checkClientAuth(userId, retryCount + 1);
       }
       
@@ -119,11 +133,24 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (event === 'SIGNED_IN' && session?.user) {
-        // Add a small delay to allow account creation to complete
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await checkClientAuth(session.user.id);
+        console.log('User signed in, checking if client account exists...');
+        
+        // First check if account already exists
+        const accountExists = await checkClientAuth(session.user.id);
+        
+        if (!accountExists) {
+          console.log('No client account found, creating one...');
+          const result = await createClientAccount(session.user.id, session.user.user_metadata);
+          
+          if (result.success) {
+            // Wait a bit more and then check again
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            await checkClientAuth(session.user.id);
+          }
+        }
       } else if (event === 'SIGNED_OUT') {
         setIsClientAccount(false);
+        resetAccountCreation();
       }
       
       if (event !== 'INITIAL_SESSION') {
@@ -135,7 +162,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [createClientAccount, resetAccountCreation]);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -181,6 +208,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     try {
       await supabase.auth.signOut();
       setIsClientAccount(false);
+      resetAccountCreation();
       window.location.href = '/';
     } catch (error) {
       console.error('Sign out error:', error);
@@ -195,7 +223,12 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     signInWithGoogle,
     signOut,
     isClientAccount,
-    refreshSession
+    refreshSession,
+    accountCreationStatus: {
+      isCreating: accountCreating,
+      isComplete: accountComplete,
+      error: accountError,
+    }
   };
 
   return (
