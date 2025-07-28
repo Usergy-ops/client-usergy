@@ -1,19 +1,54 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ClientSignUpForm } from '@/components/client/ClientSignUpForm';
 import { ClientSignInForm } from '@/components/client/ClientSignInForm';
 import { ClientPasswordResetForm } from '@/components/client/ClientPasswordResetForm';
 import { EmailVerificationBanner } from '@/components/client/EmailVerificationBanner';
 import { cn } from '@/lib/utils';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
+import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 type AuthMode = 'signup' | 'signin' | 'reset';
 
 export default function Welcome() {
+  const navigate = useNavigate();
+  const { user, isClientAccount, loading } = useClientAuth();
+  
   // Check URL params to set initial auth mode
   const urlParams = new URLSearchParams(window.location.search);
   const shouldSignIn = urlParams.get('signin') === 'true';
   const [authMode, setAuthMode] = useState<AuthMode>(shouldSignIn ? 'signin' : 'signup');
+
+  // Auto-redirect authenticated users to dashboard
+  useEffect(() => {
+    if (!loading && user && isClientAccount) {
+      console.log('Welcome: Authenticated user detected, redirecting to dashboard');
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, isClientAccount, loading, navigate]);
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">
+        <NetworkNodes />
+        <div className="relative z-10 min-h-screen flex items-center justify-center">
+          <div className="glass-card p-8">
+            <div className="flex items-center space-x-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <span className="text-lg font-semibold">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render auth forms if user is already authenticated
+  if (user && isClientAccount) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">

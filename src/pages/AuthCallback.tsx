@@ -21,11 +21,36 @@ export default function AuthCallback() {
       try {
         console.log('AuthCallback: Starting authentication process...');
         
-        // Step 1: Get current session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        // Step 1: Get current session with retries
+        let session = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+        
+        while (!session && attempts < maxAttempts) {
+          attempts++;
+          console.log(`AuthCallback: Attempt ${attempts} to get session...`);
+          
+          const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+          
+          if (sessionError) {
+            console.error('AuthCallback: Session error:', sessionError);
+            if (attempts === maxAttempts) {
+              throw sessionError;
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+            continue;
+          }
+          
+          session = currentSession;
+          
+          if (!session) {
+            console.log('AuthCallback: No session, waiting...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
 
-        if (sessionError || !session) {
-          console.error('AuthCallback: No session found:', sessionError);
+        if (!session) {
+          console.error('AuthCallback: No session found after retries');
           setError('Authentication failed. Please try again.');
           setTimeout(() => navigate('/', { replace: true }), 2000);
           return;
@@ -34,7 +59,7 @@ export default function AuthCallback() {
         console.log('AuthCallback: Session found for user:', session.user.email);
         setStatus('Setting up your account...');
 
-        // Step 2: Ensure client account exists with updated function
+        // Step 2: Ensure client account exists
         console.log('AuthCallback: Ensuring client account...');
         
         const { data: result, error: createError } = await supabase.rpc('ensure_client_account', {
@@ -60,20 +85,21 @@ export default function AuthCallback() {
           return;
         }
 
-        console.log('AuthCallback: Client account confirmed with onboarding complete');
+        console.log('AuthCallback: Client account confirmed');
 
-        // Step 3: Refresh auth context
+        // Step 3: Refresh auth context with delay to ensure DB consistency
         setStatus('Finalizing setup...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         await refreshSession();
 
-        // Step 4: Small delay to ensure context is updated
+        // Step 4: Additional delay to ensure context is fully updated
         await new Promise(resolve => setTimeout(resolve, 500));
 
         // Step 5: Navigate to dashboard
         console.log('AuthCallback: Redirecting to dashboard...');
         setStatus('Welcome! Redirecting to your dashboard...');
         
-        // Use replace to prevent back navigation to callback
         setTimeout(() => {
           navigate('/dashboard', { replace: true });
         }, 500);

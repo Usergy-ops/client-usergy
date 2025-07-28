@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -8,8 +9,7 @@ import { StatsCards } from '@/components/client/StatsCards';
 import { ProjectsOverview } from '@/components/client/ProjectsOverview';
 import { QuickActionsFAB } from '@/components/client/QuickActionsFAB';
 import { RecentActivity } from '@/components/client/RecentActivity';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuthDebug } from '@/hooks/useAuthDebug';
 
 interface ClientDashboardData {
   stats: {
@@ -103,14 +103,32 @@ async function fetchDashboardData(): Promise<ClientDashboardData> {
 }
 
 export default function ClientDashboard() {
-  const { user } = useClientAuth();
+  const { user, loading, isAuthenticated } = useAuthDebug('ClientDashboard');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['clientDashboard'],
     queryFn: fetchDashboardData,
-    refetchInterval: 30000 // Refetch every 30 seconds
+    refetchInterval: 30000, // Refetch every 30 seconds
+    enabled: isAuthenticated // Only fetch when authenticated
   });
+
+  // Show loading state while authentication is being determined
+  if (loading || !isAuthenticated) {
+    return (
+      <DashboardLayout>
+        <div className="animate-pulse space-y-8">
+          <div className="h-32 bg-muted rounded-lg"></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-32 bg-muted rounded-lg"></div>
+            ))}
+          </div>
+          <div className="h-64 bg-muted rounded-lg"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (isLoading) {
     return (

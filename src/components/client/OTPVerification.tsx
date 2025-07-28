@@ -35,13 +35,17 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
       if (result.success) {
         toast({
           title: "Email verified successfully!",
-          description: "Redirecting to complete setup...",
+          description: "Setting up your account...",
         });
 
+        // Call onSuccess to trigger any cleanup
         onSuccess();
         
-        // Redirect to auth callback instead of navigating directly to dashboard
-        window.location.href = '/auth/callback';
+        // Use a small delay to ensure toast is visible
+        setTimeout(() => {
+          // Navigate to auth callback for proper account setup
+          window.location.href = '/auth/callback';
+        }, 1000);
       } else {
         await logOTPError(
           new Error(result.error?.message || 'OTP verification failed'),
