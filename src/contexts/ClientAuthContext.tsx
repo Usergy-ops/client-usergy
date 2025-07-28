@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -26,79 +27,50 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
 
-  // Diagnose account function
+  // Enhanced diagnose account function using new database function
   const diagnoseAccount = useCallback(async (userId: string) => {
     console.log(`Diagnosing account for user: ${userId}`);
     
     try {
-      // Get user info
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      
-      // Check if user exists in auth.users
-      const userExists = !!authUser;
-      const userEmail = authUser?.email || 'N/A';
-      const userProvider = authUser?.app_metadata?.provider || 'N/A';
-      
-      // Check account type
-      const { data: accountType, error: accountTypeError } = await supabase
-        .from('account_types')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-      
-      const accountTypeExists = !accountTypeError && !!accountType;
-      
-      // Check profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-      
-      const profileExists = !profileError && !!profile;
-      
-      // Check if is client account
-      const { data: isClientResult, error: clientError } = await supabase.rpc('is_client_account', {
+      const { data: result, error } = await supabase.rpc('get_client_account_status', {
         user_id_param: userId
       });
-      
-      const diagnosticResult = {
-        user_exists: userExists,
-        user_email: userEmail,
-        user_provider: userProvider,
-        account_type_exists: accountTypeExists,
-        account_type: accountType?.account_type || 'N/A',
-        profile_exists: profileExists,
-        profile_company: profile?.company || 'N/A',
-        is_client_account_result: !clientError && isClientResult,
-        errors: {
-          account_type_error: accountTypeError?.message,
-          profile_error: profileError?.message,
-          client_error: clientError?.message
-        }
+
+      if (error) {
+        console.error('Error in diagnose account:', error);
+        await logAuthError(error, 'diagnose_account_rpc');
+        return {
+          user_exists: false,
+          error: error.message,
+          is_client_account_result: false
+        };
+      }
+
+      console.log('Account diagnosis result:', result);
+      return {
+        user_exists: result.user_exists,
+        user_email: result.user_email,
+        user_provider: result.user_provider,
+        account_type_exists: result.account_type_exists,
+        account_type: result.account_type,
+        profile_exists: result.profile_exists,
+        company_profile_exists: result.company_profile_exists,
+        is_client_account_result: result.is_client_account,
+        errors: result.errors
       };
-      
-      console.log('Account diagnosis result:', diagnosticResult);
-      return diagnosticResult;
       
     } catch (error) {
       console.error('Account diagnosis failed:', error);
-      await logAuthError(error, 'diagnose_account');
+      await logAuthError(error, 'diagnose_account_exception');
       return {
         user_exists: false,
-        user_email: 'Error',
-        user_provider: 'Error',
-        account_type_exists: false,
-        account_type: 'Error',
-        profile_exists: false,
-        profile_company: 'Error',
-        is_client_account_result: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        is_client_account_result: false
       };
     }
   }, [logAuthError]);
 
-  // Wait for client account with retries
+  // Enhanced wait for client account with better error handling
   const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 5): Promise<boolean> => {
     console.log(`Waiting for client account creation for user: ${userId}`);
     
@@ -112,8 +84,9 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
         if (error) {
           console.error('Error checking client status:', error);
+          await logAuthError(error, `check_client_status_attempt_${attempt}`);
+          
           if (attempt === maxAttempts) {
-            await logAuthError(error, 'check_client_status_final_attempt');
             return false;
           }
         } else if (isClient) {
@@ -122,16 +95,17 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
           return true;
         }
 
-        // If not last attempt, wait before retrying
+        // If not last attempt, wait before retrying with exponential backoff
         if (attempt < maxAttempts) {
-          const delay = attempt * 1000; // Exponential backoff
+          const delay = Math.min(attempt * 1000, 5000); // Cap at 5 seconds
           console.log(`Waiting ${delay}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       } catch (error) {
         console.error(`Exception on attempt ${attempt}:`, error);
+        await logAuthError(error, `check_client_status_exception_${attempt}`);
         if (attempt === maxAttempts) {
-          await logAuthError(error, 'check_client_status_exception');
+          return false;
         }
       }
     }
@@ -141,9 +115,43 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     return false;
   }, [logAuthError]);
 
-  // Initialize auth state
+  // Enhanced client account creation with robust error handling
+  const ensureClientAccount = useCallback(async (userId: string, userMetadata: any) => {
+    console.log('Ensuring client account for user:', userId);
+    
+    try {
+      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+        user_id_param: userId,
+        company_name_param: userMetadata?.companyName || 'My Company',
+        first_name_param: userMetadata?.contactFirstName || 
+          userMetadata?.full_name?.split(' ')[0] || '',
+        last_name_param: userMetadata?.contactLastName || 
+          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
+      });
+
+      if (error) {
+        console.error('Error ensuring client account:', error);
+        await logAuthError(error, 'ensure_client_account_robust');
+        return false;
+      }
+
+      if (result?.success) {
+        console.log('Client account ensured successfully:', result);
+        return true;
+      } else {
+        console.error('Client account creation failed:', result?.error);
+        await logAuthError(new Error(result?.error), 'ensure_client_account_failed');
+        return false;
+      }
+    } catch (error) {
+      console.error('Exception ensuring client account:', error);
+      await logAuthError(error, 'ensure_client_account_exception');
+      return false;
+    }
+  }, [logAuthError]);
+
+  // Enhanced session initialization with better error handling
   const initializeAuth = useCallback(async () => {
-    // Prevent multiple initializations
     if (initializingRef.current) {
       console.log('Already initializing auth, skipping...');
       return;
@@ -157,17 +165,27 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       
       if (error) {
         console.error('Error getting initial session:', error);
-        await logAuthError(error, 'initialize_auth');
-      } else if (session?.user) {
+        await logAuthError(error, 'initialize_auth_get_session');
+        setLoading(false);
+        return;
+      }
+
+      if (session?.user) {
         console.log('Found existing session for:', session.user.email);
         setSession(session);
         setUser(session.user);
         
-        // Check if user is a client
+        // Ensure client account exists before checking status
+        await ensureClientAccount(session.user.id, session.user.user_metadata);
+        
+        // Check if user is a client with retries
         const isClient = await waitForClientAccount(session.user.id, 3);
         console.log('Initial client status:', isClient);
       } else {
         console.log('No existing session found');
+        setSession(null);
+        setUser(null);
+        setIsClientAccount(false);
       }
     } catch (error) {
       console.error('Exception during auth initialization:', error);
@@ -176,61 +194,67 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       setLoading(false);
       initializingRef.current = false;
     }
-  }, [waitForClientAccount, logAuthError]);
+  }, [waitForClientAccount, ensureClientAccount, logAuthError]);
 
-  // Set up auth listener
+  // Enhanced auth state change handler
+  const handleAuthStateChange = useCallback(async (event: string, newSession: Session | null) => {
+    console.log('Auth state changed:', event, newSession?.user?.email);
+
+    // Update session and user state immediately
+    setSession(newSession);
+    setUser(newSession?.user ?? null);
+
+    if (event === 'SIGNED_IN' && newSession?.user) {
+      console.log('User signed in, ensuring client account...');
+      
+      // Ensure client account exists
+      const accountCreated = await ensureClientAccount(newSession.user.id, newSession.user.user_metadata);
+      
+      if (accountCreated) {
+        // Verify client status with retries
+        const isClient = await waitForClientAccount(newSession.user.id, 5);
+        console.log('Client status after sign in:', isClient);
+      } else {
+        console.warn('Failed to create client account');
+        setIsClientAccount(false);
+      }
+      
+    } else if (event === 'SIGNED_OUT') {
+      console.log('User signed out');
+      setIsClientAccount(false);
+    } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+      console.log('Token refreshed, verifying client status...');
+      const isClient = await waitForClientAccount(newSession.user.id, 2);
+      console.log('Client status after token refresh:', isClient);
+    }
+  }, [ensureClientAccount, waitForClientAccount]);
+
+  // Set up auth listener and initialization
   useEffect(() => {
     let mounted = true;
 
-    // Initialize immediately
-    initializeAuth();
-
-    // Set up listener for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    // Set up auth state listener first
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-
-      console.log('Auth state changed:', event, newSession?.user?.email);
-
-      // Update session immediately
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-
-      if (event === 'SIGNED_IN' && newSession?.user) {
-        // For sign in events, ensure client account exists
-        console.log('User signed in, ensuring client account...');
-        
-        // First try to create account if it doesn't exist
-        const { data: ensureResult } = await supabase.rpc('ensure_client_account', {
-          user_id_param: newSession.user.id,
-          company_name_param: newSession.user.user_metadata?.companyName || 'My Company',
-          first_name_param: newSession.user.user_metadata?.contactFirstName || 
-                           newSession.user.user_metadata?.full_name?.split(' ')[0] || '',
-          last_name_param: newSession.user.user_metadata?.contactLastName || 
-                          newSession.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
-        });
-
-        if (ensureResult?.success) {
-          console.log('Client account ensured successfully');
+      
+      // Use setTimeout to prevent potential deadlocks
+      setTimeout(() => {
+        if (mounted) {
+          handleAuthStateChange(event, session);
         }
-
-        // Then verify with retries
-        const isClient = await waitForClientAccount(newSession.user.id);
-        console.log('Client status after sign in:', isClient);
-        
-      } else if (event === 'SIGNED_OUT') {
-        console.log('User signed out');
-        setIsClientAccount(false);
-        setLoading(false);
-      }
+      }, 0);
     });
+
+    // Initialize auth state
+    initializeAuth();
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [initializeAuth, waitForClientAccount]);
+  }, [initializeAuth, handleAuthStateChange]);
 
-  // Refresh session manually
+  // Enhanced session refresh
   const refreshSession = useCallback(async () => {
     console.log('Manually refreshing session...');
     
@@ -247,8 +271,9 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       setUser(session?.user ?? null);
 
       if (session?.user) {
+        // Verify client status after refresh
         const isClient = await waitForClientAccount(session.user.id, 3);
-        console.log('Client status after refresh:', isClient);
+        console.log('Client status after manual refresh:', isClient);
       } else {
         setIsClientAccount(false);
       }
@@ -258,7 +283,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, logAuthError]);
 
-  // Sign in method
+  // Enhanced sign in with better error handling
   const signIn = async (email: string, password: string) => {
     try {
       console.log('Signing in with email:', email);
@@ -270,11 +295,11 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
       if (error) {
         console.error('Sign in error:', error);
-        await logAuthError(error, 'sign_in');
+        await logAuthError(error, 'sign_in_password');
         return { error };
       }
 
-      // Auth state change will handle the rest
+      console.log('Sign in successful');
       return { error: null };
     } catch (error) {
       console.error('Sign in exception:', error);
@@ -283,7 +308,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Sign in with Google
+  // Enhanced Google OAuth with better error handling
   const signInWithGoogle = async () => {
     try {
       console.log('Initiating Google OAuth...');
@@ -301,33 +326,44 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
       if (error) {
         console.error('Google OAuth error:', error);
-        await logAuthError(error, 'google_sign_in');
+        await logAuthError(error, 'google_oauth');
         return { error };
       }
 
+      console.log('Google OAuth initiated successfully');
       return { error: null };
     } catch (error) {
       console.error('Google OAuth exception:', error);
-      await logAuthError(error, 'google_sign_in_exception');
+      await logAuthError(error, 'google_oauth_exception');
       return { error: { message: 'Failed to sign in with Google' } };
     }
   };
 
-  // Sign out
+  // Enhanced sign out with cleanup
   const signOut = async () => {
     try {
       console.log('Signing out...');
-      await supabase.auth.signOut();
       
-      // Clear state
+      // Clear state first
       setUser(null);
       setSession(null);
       setIsClientAccount(false);
       
+      // Then sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Sign out error:', error);
+        await logAuthError(error, 'sign_out');
+      }
+      
+      // Force redirect to home
       window.location.href = '/';
     } catch (error) {
-      console.error('Sign out error:', error);
-      await logAuthError(error, 'sign_out');
+      console.error('Sign out exception:', error);
+      await logAuthError(error, 'sign_out_exception');
+      // Still redirect on error
+      window.location.href = '/';
     }
   };
 

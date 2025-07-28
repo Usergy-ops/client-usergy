@@ -1,11 +1,31 @@
 
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 const BROADCAST_CHANNEL = 'usergy_auth_sync';
 
 export function useSessionBroadcast() {
   const { refreshSession } = useClientAuth();
+
+  // Enhanced broadcast notification with error handling
+  const notifyAuthChange = useCallback((eventType: string = 'AUTH_STATE_CHANGE') => {
+    if (typeof BroadcastChannel === 'undefined') {
+      console.warn('BroadcastChannel not supported in this browser');
+      return;
+    }
+
+    try {
+      const channel = new BroadcastChannel(BROADCAST_CHANNEL);
+      channel.postMessage({
+        type: eventType,
+        timestamp: Date.now(),
+        origin: window.location.origin
+      });
+      channel.close();
+    } catch (error) {
+      console.error('Error broadcasting auth change:', error);
+    }
+  }, []);
 
   useEffect(() => {
     // Check if BroadcastChannel is supported
@@ -14,54 +34,68 @@ export function useSessionBroadcast() {
       return;
     }
 
-    // Create broadcast channel
-    const channel = new BroadcastChannel(BROADCAST_CHANNEL);
+    let channel: BroadcastChannel;
+    
+    try {
+      // Create broadcast channel
+      channel = new BroadcastChannel(BROADCAST_CHANNEL);
 
-    // Listen for auth changes from other tabs
-    channel.onmessage = (event) => {
-      console.log('Received auth broadcast:', event.data);
-      
-      if (event.data.type === 'AUTH_STATE_CHANGE') {
-        // Refresh our session to sync with other tab
+      // Listen for auth changes from other tabs
+      channel.onmessage = (event) => {
+        console.log('Received auth broadcast:', event.data);
+        
+        if (event.data.type === 'AUTH_STATE_CHANGE') {
+          // Only refresh if from same origin to prevent cross-origin issues
+          if (event.data.origin === window.location.origin) {
+            console.log('Refreshing session due to auth change in another tab');
+            refreshSession();
+          }
+        }
+      };
+
+      // Handle channel errors
+      channel.onerror = (error) => {
+        console.error('BroadcastChannel error:', error);
+      };
+
+    } catch (error) {
+      console.error('Error setting up BroadcastChannel:', error);
+    }
+
+    // Enhanced storage event listener for fallback
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'usergy-client-auth' && e.newValue !== e.oldValue) {
+        console.log('Auth token changed in another tab (storage event)');
         refreshSession();
       }
-    };
-
-    // Notify other tabs when we change auth state
-    const notifyOtherTabs = () => {
-      channel.postMessage({
-        type: 'AUTH_STATE_CHANGE',
-        timestamp: Date.now()
-      });
     };
 
     // Listen for storage events as fallback
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'usergy-client-auth') {
-        console.log('Auth token changed in another tab');
-        refreshSession();
-      }
-    };
-
     window.addEventListener('storage', handleStorageChange);
 
+    // Listen for focus events to sync auth state when tab becomes active
+    const handleFocus = () => {
+      console.log('Tab focused, refreshing session...');
+      refreshSession();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
     return () => {
-      channel.close();
+      try {
+        if (channel) {
+          channel.close();
+        }
+      } catch (error) {
+        console.error('Error closing BroadcastChannel:', error);
+      }
+      
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [refreshSession]);
 
   return {
-    // Could expose functions to manually trigger broadcasts if needed
-    notifyAuthChange: () => {
-      if (typeof BroadcastChannel !== 'undefined') {
-        const channel = new BroadcastChannel(BROADCAST_CHANNEL);
-        channel.postMessage({
-          type: 'AUTH_STATE_CHANGE',
-          timestamp: Date.now()
-        });
-        channel.close();
-      }
-    }
+    notifyAuthChange
   };
 }
