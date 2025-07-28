@@ -72,7 +72,6 @@ async function handleClientSignup(req: Request): Promise<Response> {
   try {
     console.log('Starting signup process for:', email);
     
-    // FIXED: Use admin.listUsers instead of direct table access
     const { data: existingUsers, error: userCheckError } = await supabase.auth.admin.listUsers();
 
     if (userCheckError) {
@@ -119,18 +118,14 @@ async function handleClientSignup(req: Request): Promise<Response> {
       );
     }
 
-    // Store OTP with detailed logging
-    const otpRecord = {
-      email,
-      otp_code: otpCode,
-      expires_at: expiresAt.toISOString(),
-    };
-
-    console.log('Storing OTP record:', otpRecord);
-
+    // Store OTP
     const { error: otpError } = await supabase
       .from('user_otp_verification')
-      .insert(otpRecord);
+      .insert({
+        email,
+        otp_code: otpCode,
+        expires_at: expiresAt.toISOString(),
+      });
 
     if (otpError) {
       console.error('OTP storage error:', otpError);
@@ -171,20 +166,6 @@ async function handleOTPVerification(req: Request): Promise<Response> {
   try {
     console.log('Verifying OTP for:', email, 'Code:', otpCode);
 
-    // First, let's check what OTP records exist for this email
-    const { data: allOtpRecords, error: checkError } = await supabase
-      .from('user_otp_verification')
-      .select('*')
-      .eq('email', email)
-      .order('created_at', { ascending: false });
-
-    console.log('All OTP records for email:', email, allOtpRecords);
-
-    if (checkError) {
-      console.error('Error checking OTP records:', checkError);
-    }
-
-    // Now try to find the specific OTP record
     const { data: otpData, error: otpError } = await supabase
       .from('user_otp_verification')
       .select('*')
@@ -193,47 +174,15 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       .is('verified_at', null)
       .single();
 
-    console.log('OTP lookup result:', { otpData, otpError });
-
     if (otpError || !otpData) {
       console.error('OTP not found or error:', otpError);
-      
-      // Check if OTP is expired
-      const { data: expiredOtp } = await supabase
-        .from('user_otp_verification')
-        .select('*')
-        .eq('email', email)
-        .eq('otp_code', otpCode)
-        .single();
-
-      if (expiredOtp) {
-        const now = new Date();
-        const expiresAt = new Date(expiredOtp.expires_at);
-        
-        if (now > expiresAt) {
-          console.log('OTP has expired');
-          return new Response(
-            JSON.stringify({ error: 'Verification code has expired. Please request a new one.' }),
-            { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-          );
-        }
-        
-        if (expiredOtp.verified_at) {
-          console.log('OTP already used');
-          return new Response(
-            JSON.stringify({ error: 'Verification code has already been used. Please request a new one.' }),
-            { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-          );
-        }
-      }
-      
       return new Response(
         JSON.stringify({ error: 'Invalid verification code. Please try again.' }),
         { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
       );
     }
 
-    // Check if OTP is still valid (not expired)
+    // Check if OTP is still valid
     const now = new Date();
     const expiresAt = new Date(otpData.expires_at);
     
@@ -255,7 +204,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       console.error('Error marking OTP as verified:', updateError);
     }
 
-    // Get user by email using the admin SDK
+    // Get user by email
     const { data: userData, error: userError } = await supabase.auth.admin.listUsers();
     
     if (userError) {
@@ -289,36 +238,17 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       console.error('Error confirming email:', confirmError);
     }
 
-    // Create client account records with retry logic
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    while (retryCount < maxRetries) {
-      try {
-        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_for_user', {
-          user_id_param: user.id,
-          company_name_param: user.user_metadata?.companyName || 'My Company',
-          first_name_param: user.user_metadata?.contactFirstName || '',
-          last_name_param: user.user_metadata?.contactLastName || ''
-        });
+    // Use the new ensure_client_account function
+    const { data: createResult, error: createError } = await supabase.rpc('ensure_client_account', {
+      user_id_param: user.id,
+      company_name_param: user.user_metadata?.companyName || 'My Company',
+      first_name_param: user.user_metadata?.contactFirstName || '',
+      last_name_param: user.user_metadata?.contactLastName || ''
+    });
 
-        if (createError) {
-          throw createError;
-        }
-
-        console.log('Client account created successfully for user:', user.id);
-        break;
-      } catch (accountError) {
-        retryCount++;
-        console.error(`Attempt ${retryCount} failed to create client account:`, accountError);
-        
-        if (retryCount >= maxRetries) {
-          console.error('Max retries reached for account creation');
-          break;
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-      }
+    if (createError || !createResult?.success) {
+      console.error('Error creating client account:', createError);
+      // Don't fail the verification, just log the error
     }
 
     console.log('OTP verification successful for:', email);

@@ -21,8 +21,8 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId);
       
-      // Use the safe account creation function
-      const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
+      // Use the new ensure_client_account function
+      const { data: result, error } = await supabase.rpc('ensure_client_account', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -31,16 +31,16 @@ export function useClientAccountCreation() {
           userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
       });
 
-      if (createError) {
-        throw createError;
+      if (error) {
+        throw error;
       }
 
-      if (createResult?.success) {
+      if (result?.success && result?.is_client) {
         console.log('Client account created successfully');
         setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
         return { success: true };
       } else {
-        throw new Error(createResult?.error || 'Account creation failed');
+        throw new Error(result?.error || 'Account creation failed');
       }
     } catch (error) {
       console.error('Client account creation failed:', error);

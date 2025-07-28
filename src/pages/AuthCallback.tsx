@@ -16,7 +16,7 @@ export default function AuthCallback() {
 
     const handleCallback = async () => {
       try {
-        console.log('Starting optimized auth callback...');
+        console.log('Starting auth callback...');
         
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
@@ -38,53 +38,37 @@ export default function AuthCallback() {
         // Refresh session to ensure context is updated
         await refreshSession();
 
-        // For all users, try to ensure client account exists
+        // Use the new ensure_client_account function
         console.log('Ensuring client account exists...');
         
-        const { data: createResult, error: createError } = await supabase.rpc('create_client_account_safe', {
+        const { data: result, error: ensureError } = await supabase.rpc('ensure_client_account', {
           user_id_param: session.user.id,
-          company_name_param: 'My Company',
+          company_name_param: session.user.user_metadata?.companyName || 'My Company',
           first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || 
                            session.user.user_metadata?.contactFirstName || '',
           last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 
                           session.user.user_metadata?.contactLastName || ''
         });
 
-        if (createError) {
-          console.error('Error with safe account creation:', createError);
-        } else {
-          console.log('Safe account creation result:', createResult);
-        }
-
-        // Single verification check with shorter timeout
-        console.log('Verifying account status...');
-        const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
-          user_id_param: session.user.id
-        });
-
         if (!mounted) return;
 
-        if (checkError) {
-          console.error('Error checking account status:', checkError);
-          setError('Account verification failed. Please try signing in again.');
+        if (ensureError) {
+          console.error('Error ensuring client account:', ensureError);
+          setError('Account setup failed. Please try signing in again.');
           setTimeout(() => navigate('/', { replace: true }), 3000);
           return;
         }
 
-        const isClientAccount = Boolean(isClient);
-        console.log('Account verification result:', isClientAccount);
-
-        if (isClientAccount) {
-          console.log('Account verified, redirecting to dashboard');
+        if (result?.success && result?.is_client) {
+          console.log('Client account ready, redirecting to dashboard');
           setStatus('Account ready! Redirecting...');
-          // Small delay to show success message
           setTimeout(() => {
             if (mounted) {
               navigate('/dashboard', { replace: true });
             }
           }, 1000);
         } else {
-          console.error('Account verification failed');
+          console.error('Client account setup failed:', result);
           setError('Account setup incomplete. Please try signing in again.');
           setTimeout(() => {
             if (mounted) {
