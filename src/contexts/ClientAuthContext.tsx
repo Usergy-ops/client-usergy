@@ -120,6 +120,23 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       setUser(session?.user ?? null);
 
       if (session?.user) {
+        // After refreshing session, ensure client account is properly set up
+        console.log('ClientAuth: Ensuring client account after session refresh...');
+        const { data: result, error: ensureError } = await supabase.rpc('ensure_client_account', {
+          user_id_param: session.user.id,
+          company_name_param: session.user.user_metadata?.companyName || 'My Company',
+          first_name_param: session.user.user_metadata?.contactFirstName || 
+                           session.user.user_metadata?.full_name?.split(' ')[0] || '',
+          last_name_param: session.user.user_metadata?.contactLastName || 
+                          session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+        });
+
+        if (ensureError) {
+          console.error('ClientAuth: Error ensuring client account:', ensureError);
+        } else {
+          console.log('ClientAuth: Client account ensured:', result);
+        }
+
         await checkClientStatus(session.user.id);
       } else {
         setIsClientAccount(false);

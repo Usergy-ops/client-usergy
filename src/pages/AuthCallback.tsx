@@ -34,55 +34,33 @@ export default function AuthCallback() {
         console.log('AuthCallback: Session found for user:', session.user.email);
         setStatus('Setting up your account...');
 
-        // Step 2: Ensure client account exists with retry logic
-        let accountCreated = false;
-        let retries = 0;
-        const maxRetries = 3;
-        const retryDelay = 1000; // Start with 1 second
+        // Step 2: Ensure client account exists with updated function
+        console.log('AuthCallback: Ensuring client account...');
+        
+        const { data: result, error: createError } = await supabase.rpc('ensure_client_account', {
+          user_id_param: session.user.id,
+          company_name_param: session.user.user_metadata?.companyName || 'My Company',
+          first_name_param: session.user.user_metadata?.contactFirstName || 
+                           session.user.user_metadata?.full_name?.split(' ')[0] || '',
+          last_name_param: session.user.user_metadata?.contactLastName || 
+                          session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || ''
+        });
 
-        while (!accountCreated && retries < maxRetries) {
-          try {
-            console.log(`AuthCallback: Ensuring client account (attempt ${retries + 1}/${maxRetries})...`);
-            
-            const { data: result, error: createError } = await supabase.rpc('ensure_client_account', {
-              user_id_param: session.user.id,
-              company_name_param: session.user.user_metadata?.companyName || 'My Company',
-              first_name_param: session.user.user_metadata?.full_name?.split(' ')[0] || 
-                               session.user.user_metadata?.contactFirstName || '',
-              last_name_param: session.user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || 
-                              session.user.user_metadata?.contactLastName || ''
-            });
-
-            if (createError) {
-              console.error('AuthCallback: Error ensuring account:', createError);
-              throw createError;
-            }
-
-            if (result?.success && result?.is_client) {
-              accountCreated = true;
-              console.log('AuthCallback: Client account confirmed');
-            } else if (result?.is_client) {
-              // Account already exists
-              accountCreated = true;
-              console.log('AuthCallback: Existing client account found');
-            } else {
-              throw new Error(result?.error || 'Failed to create client account');
-            }
-          } catch (err) {
-            console.error(`AuthCallback: Attempt ${retries + 1} failed:`, err);
-            retries++;
-            if (retries < maxRetries) {
-              // Exponential backoff
-              await new Promise(resolve => setTimeout(resolve, retryDelay * retries));
-            }
-          }
-        }
-
-        if (!accountCreated) {
+        if (createError) {
+          console.error('AuthCallback: Error ensuring account:', createError);
           setError('Unable to set up your account. Please try again.');
           setTimeout(() => navigate('/', { replace: true }), 3000);
           return;
         }
+
+        if (!result?.success) {
+          console.error('AuthCallback: Account creation failed:', result);
+          setError('Unable to set up your account. Please try again.');
+          setTimeout(() => navigate('/', { replace: true }), 3000);
+          return;
+        }
+
+        console.log('AuthCallback: Client account confirmed with onboarding complete');
 
         // Step 3: Refresh auth context
         setStatus('Finalizing setup...');
