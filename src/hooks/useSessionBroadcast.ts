@@ -53,11 +53,6 @@ export function useSessionBroadcast() {
         }
       };
 
-      // Handle channel errors
-      channel.onerror = (error) => {
-        console.error('BroadcastChannel error:', error);
-      };
-
     } catch (error) {
       console.error('Error setting up BroadcastChannel:', error);
     }
