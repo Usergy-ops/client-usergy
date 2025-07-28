@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -14,6 +13,7 @@ interface ClientAuthContextType {
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
+  diagnoseAccount: (userId: string) => Promise<any>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -25,6 +25,78 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const [isClientAccount, setIsClientAccount] = useState(false);
   const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
+
+  // Diagnose account function
+  const diagnoseAccount = useCallback(async (userId: string) => {
+    console.log(`Diagnosing account for user: ${userId}`);
+    
+    try {
+      // Get user info
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      
+      // Check if user exists in auth.users
+      const userExists = !!authUser;
+      const userEmail = authUser?.email || 'N/A';
+      const userProvider = authUser?.app_metadata?.provider || 'N/A';
+      
+      // Check account type
+      const { data: accountType, error: accountTypeError } = await supabase
+        .from('account_types')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      const accountTypeExists = !accountTypeError && !!accountType;
+      
+      // Check profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+      
+      const profileExists = !profileError && !!profile;
+      
+      // Check if is client account
+      const { data: isClientResult, error: clientError } = await supabase.rpc('is_client_account', {
+        user_id_param: userId
+      });
+      
+      const diagnosticResult = {
+        user_exists: userExists,
+        user_email: userEmail,
+        user_provider: userProvider,
+        account_type_exists: accountTypeExists,
+        account_type: accountType?.account_type || 'N/A',
+        profile_exists: profileExists,
+        profile_company: profile?.company || 'N/A',
+        is_client_account_result: !clientError && isClientResult,
+        errors: {
+          account_type_error: accountTypeError?.message,
+          profile_error: profileError?.message,
+          client_error: clientError?.message
+        }
+      };
+      
+      console.log('Account diagnosis result:', diagnosticResult);
+      return diagnosticResult;
+      
+    } catch (error) {
+      console.error('Account diagnosis failed:', error);
+      await logAuthError(error, 'diagnose_account');
+      return {
+        user_exists: false,
+        user_email: 'Error',
+        user_provider: 'Error',
+        account_type_exists: false,
+        account_type: 'Error',
+        profile_exists: false,
+        profile_company: 'Error',
+        is_client_account_result: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }, [logAuthError]);
 
   // Wait for client account with retries
   const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 5): Promise<boolean> => {
@@ -269,6 +341,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     signOut,
     refreshSession,
     waitForClientAccount,
+    diagnoseAccount,
   };
 
   return (
