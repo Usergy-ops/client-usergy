@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { useErrorLogger } from '@/hooks/useErrorLogger';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -22,27 +23,25 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
+  const { logAuthError } = useErrorLogger();
 
   const checkClientStatus = async (userId: string): Promise<boolean> => {
     try {
-      console.log('Checking client status for user:', userId);
-      
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
       });
 
       if (error) {
-        console.error('Error checking client status:', error);
+        await logAuthError(error, 'check_client_status');
         setIsClientAccount(false);
         return false;
       }
 
       const isClientAcc = Boolean(isClient);
-      console.log('Client status result:', isClientAcc);
       setIsClientAccount(isClientAcc);
       return isClientAcc;
     } catch (error) {
-      console.error('Exception checking client status:', error);
+      await logAuthError(error, 'check_client_status_exception');
       setIsClientAccount(false);
       return false;
     }
@@ -50,11 +49,9 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
   const refreshSession = async () => {
     try {
-      console.log('Refreshing session...');
-      
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) {
-        console.error('Error refreshing session:', error);
+        await logAuthError(error, 'refresh_session');
         return;
       }
 
@@ -67,7 +64,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
         setIsClientAccount(false);
       }
     } catch (error) {
-      console.error('Error in refreshSession:', error);
+      await logAuthError(error, 'refresh_session_exception');
     }
   };
 
@@ -76,20 +73,17 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        console.log('Initializing auth...');
-        
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error('Error getting session:', error);
+          await logAuthError(error, 'initialize_auth');
         } else if (session?.user && mounted) {
-          console.log('Initial session found:', session.user.id);
           setSession(session);
           setUser(session.user);
           await checkClientStatus(session.user.id);
         }
       } catch (error) {
-        console.error('Error initializing auth:', error);
+        await logAuthError(error, 'initialize_auth_exception');
       } finally {
         if (mounted) {
           setLoading(false);
@@ -102,13 +96,10 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
-      console.log('Auth state change:', event, session?.user?.id);
-
       setSession(session);
       setUser(session?.user ?? null);
 
       if (event === 'SIGNED_IN' && session?.user) {
-        console.log('User signed in, checking client status...');
         await checkClientStatus(session.user.id);
       } else if (event === 'SIGNED_OUT') {
         setIsClientAccount(false);
@@ -123,7 +114,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []); // Remove all dependencies to prevent infinite loops
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -133,13 +124,13 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        console.error('Sign in error:', error);
+        await logAuthError(error, 'sign_in');
         return { error };
       }
 
       return { error: null };
     } catch (error) {
-      console.error('Sign in exception:', error);
+      await logAuthError(error, 'sign_in_exception');
       return { error };
     }
   };
@@ -154,13 +145,13 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        console.error('Google OAuth error:', error);
+        await logAuthError(error, 'google_sign_in');
         return { error };
       }
 
       return { error: null };
     } catch (error) {
-      console.error('Google signin error:', error);
+      await logAuthError(error, 'google_sign_in_exception');
       return { error: { message: 'Failed to sign in with Google' } };
     }
   };
@@ -171,7 +162,7 @@ export function ClientAuthProvider({ children }: { children: ReactNode }) {
       setIsClientAccount(false);
       window.location.href = '/';
     } catch (error) {
-      console.error('Sign out error:', error);
+      await logAuthError(error, 'sign_out');
     }
   };
 

@@ -8,6 +8,7 @@ import { Eye, EyeOff, Mail, Lock, Building, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { OTPVerification } from './OTPVerification';
 import { useToast } from '@/hooks/use-toast';
+import { useErrorLogger } from '@/hooks/useErrorLogger';
 
 export function ClientSignUpForm() {
   const { signInWithGoogle } = useClientAuth();
@@ -16,6 +17,7 @@ export function ClientSignUpForm() {
   const [error, setError] = useState('');
   const [showOTPVerification, setShowOTPVerification] = useState(false);
   const { toast } = useToast();
+  const { logAuthError } = useErrorLogger();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -37,11 +39,11 @@ export function ClientSignUpForm() {
       const { error } = await signInWithGoogle();
 
       if (error) {
-        console.error('Google OAuth error:', error);
+        await logAuthError(error, 'google_signup');
         setError('Failed to authenticate with Google. Please try again.');
       }
     } catch (error) {
-      console.error('Google auth exception:', error);
+      await logAuthError(error, 'google_signup_exception');
       setError('An unexpected error occurred with Google authentication');
     } finally {
       setLoading(false);
@@ -65,9 +67,6 @@ export function ClientSignUpForm() {
     setError('');
     
     try {
-      console.log('Starting signup process for:', formData.email);
-      console.log('Form data:', { ...formData, password: '[HIDDEN]' });
-      
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {
           email: formData.email,
@@ -78,16 +77,13 @@ export function ClientSignUpForm() {
         }
       });
 
-      console.log('Signup response:', { data, error });
-
       if (error) {
-        console.error('Signup error:', error);
+        await logAuthError(error, 'email_signup');
         setError(error.message || 'Failed to create account. Please try again.');
         return;
       }
 
       if (data && data.success) {
-        console.log('Signup successful, showing OTP verification');
         setShowOTPVerification(true);
         
         toast({
@@ -95,11 +91,14 @@ export function ClientSignUpForm() {
           description: "Please check your email for the verification code.",
         });
       } else {
-        console.error('Signup failed:', data);
+        await logAuthError(
+          new Error(data?.error || 'Signup failed'),
+          'email_signup_failed'
+        );
         setError(data?.error || 'Failed to create account. Please try again.');
       }
     } catch (error) {
-      console.error('Signup exception:', error);
+      await logAuthError(error, 'email_signup_exception');
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -107,7 +106,6 @@ export function ClientSignUpForm() {
   };
 
   const handleOTPSuccess = () => {
-    console.log('OTP verification successful');
     toast({
       title: "Welcome to Usergy!",
       description: "Your account has been created successfully.",
@@ -115,7 +113,6 @@ export function ClientSignUpForm() {
   };
 
   const handleBackToSignup = () => {
-    console.log('Back to signup form');
     setShowOTPVerification(false);
   };
 

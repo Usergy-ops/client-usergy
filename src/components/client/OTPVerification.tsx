@@ -4,10 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useOTPVerification } from '@/hooks/useOTPVerification';
+import { useErrorLogger } from '@/hooks/useErrorLogger';
+import { useClientAccountStatus } from '@/hooks/useClientAccountStatus';
 
 interface OTPVerificationProps {
   email: string;
@@ -16,94 +18,32 @@ interface OTPVerificationProps {
 }
 
 export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [otpCode, setOtpCode] = useState('');
-  const [resendLoading, setResendLoading] = useState(false);
   const [isWaitingForAccount, setIsWaitingForAccount] = useState(false);
   const { toast } = useToast();
   const { refreshSession } = useClientAuth();
   const navigate = useNavigate();
-
-  const pollForAccountReady = async (userId: string, maxAttempts = 8): Promise<boolean> => {
-    console.log('Polling for account readiness for user:', userId);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`Account check attempt ${attempt}/${maxAttempts}`);
-
-      try {
-        const { data: isClient, error: checkError } = await supabase.rpc('is_client_account', {
-          user_id_param: userId
-        });
-
-        if (checkError) {
-          console.error('Error checking account status:', checkError);
-        } else {
-          const isReady = Boolean(isClient);
-          console.log('Account status check result:', isReady);
-          
-          if (isReady) {
-            console.log('Account is ready!');
-            return true;
-          }
-        }
-
-        if (attempt < maxAttempts) {
-          // Wait before next attempt, with exponential backoff
-          const delay = Math.min(1000 * Math.pow(1.5, attempt - 1), 4000);
-          console.log(`Waiting ${delay}ms before next attempt...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      } catch (pollError) {
-        console.error('Error during polling:', pollError);
-        if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-      }
-    }
-
-    console.log('Account not ready after polling');
-    return false;
-  };
+  const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
+  const { logOTPError } = useErrorLogger();
+  const { pollForAccountReady } = useClientAccountStatus();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!otpCode || otpCode.length !== 6) {
-      setError('Please enter a valid 6-digit verification code');
       return;
     }
 
-    setLoading(true);
-    setError('');
-
     try {
-      console.log('Verifying OTP for:', email);
+      const result = await verifyOTP(email, otpCode);
 
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: { 
-          email,
-          otpCode 
-        }
-      });
-
-      if (error) {
-        console.error('OTP verification failed:', error);
-        setError('Invalid verification code. Please try again.');
-        return;
-      }
-
-      if (data && data.success) {
-        console.log('OTP verification successful');
-
+      if (result.success) {
         toast({
           title: "Email verified successfully!",
           description: "Setting up your account...",
         });
 
         onSuccess();
-
-        // Refresh session to get the updated user
         await refreshSession();
 
         // Get the current session to access user ID
@@ -116,55 +56,48 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           const isReady = await pollForAccountReady(session.user.id);
 
           if (isReady) {
-            console.log('Account is ready, navigating to dashboard');
             navigate('/dashboard', { replace: true });
           } else {
-            console.log('Account not ready, staying on current page');
-            setError('Account setup is taking longer than expected. Please try refreshing the page.');
+            await logOTPError(
+              new Error('Account not ready after polling'),
+              'otp_verification_account_setup',
+              email
+            );
           }
-        } else {
-          setError('Session not found. Please try signing in again.');
         }
-
       } else {
-        console.error('OTP verification failed:', data);
-        setError(data?.error || 'Invalid verification code. Please try again.');
+        await logOTPError(
+          new Error(result.error?.message || 'OTP verification failed'),
+          'otp_verification_failed',
+          email
+        );
       }
     } catch (error) {
-      console.error('OTP verification exception:', error);
-      setError('An error occurred. Please try again.');
+      await logOTPError(error, 'otp_verification_exception', email);
     } finally {
-      setLoading(false);
       setIsWaitingForAccount(false);
     }
   };
 
   const handleResendCode = async () => {
-    setResendLoading(true);
-    setError('');
-
     try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
-        body: { email }
-      });
+      const result = await resendOTP(email);
 
-      if (error) {
-        console.error('Resend OTP error:', error);
-        setError('Failed to resend verification code. Please try again.');
-      } else if (data && data.success) {
+      if (result.success) {
         toast({
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
         });
         setOtpCode('');
       } else {
-        setError('Failed to resend verification code. Please try again.');
+        await logOTPError(
+          new Error(result.error?.message || 'Failed to resend OTP'),
+          'otp_resend_failed',
+          email
+        );
       }
     } catch (error) {
-      console.error('Resend OTP exception:', error);
-      setError('Failed to resend verification code. Please try again.');
-    } finally {
-      setResendLoading(false);
+      await logOTPError(error, 'otp_resend_exception', email);
     }
   };
 
@@ -196,25 +129,25 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
             onChange={(e) => {
               const value = e.target.value.replace(/\D/g, '').slice(0, 6);
               setOtpCode(value);
-              setError('');
+              if (error) reset();
             }}
             placeholder="Enter 6-digit code"
             className="text-center text-lg font-mono tracking-widest usergy-input"
             maxLength={6}
             required
-            disabled={loading || isWaitingForAccount}
+            disabled={isVerifying || isWaitingForAccount}
           />
         </div>
 
         <Button 
           type="submit" 
           className="w-full usergy-btn-primary"
-          disabled={loading || isWaitingForAccount || otpCode.length !== 6}
+          disabled={isVerifying || isWaitingForAccount || otpCode.length !== 6}
         >
-          {loading || isWaitingForAccount ? (
+          {isVerifying || isWaitingForAccount ? (
             <div className="flex items-center space-x-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>{loading ? 'Verifying...' : 'Setting up your account...'}</span>
+              <span>{isVerifying ? 'Verifying...' : 'Setting up your account...'}</span>
             </div>
           ) : (
             'Verify Email'
@@ -230,10 +163,10 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           type="button"
           variant="outline"
           onClick={handleResendCode}
-          disabled={resendLoading}
+          disabled={isResending}
           className="w-full"
         >
-          {resendLoading ? (
+          {isResending ? (
             <div className="flex items-center space-x-2">
               <RefreshCw className="w-4 h-4 animate-spin" />
               <span>Sending...</span>
@@ -253,7 +186,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           variant="ghost"
           onClick={onBack}
           className="text-muted-foreground hover:text-foreground"
-          disabled={loading || isWaitingForAccount}
+          disabled={isVerifying || isWaitingForAccount}
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Sign Up
