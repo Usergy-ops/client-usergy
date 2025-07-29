@@ -11,6 +11,7 @@ import Welcome from "./pages/Welcome";
 import ProfileSetup from "./pages/ProfileSetup";
 import ClientDashboard from "./pages/ClientDashboard";
 import AuthCallback from "./pages/AuthCallback";
+import Diagnostics from "./pages/Diagnostics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const AppContent = () => {
       <Routes>
         <Route path="/" element={<Welcome />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/diagnostics" element={<Diagnostics />} />
         <Route 
           path="/profile" 
           element={

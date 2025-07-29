@@ -14,6 +14,22 @@ const resendApiKey = Deno.env.get('RESEND_API_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const resend = new Resend(resendApiKey);
 
+// Helper to log errors to the database
+const logError = async (error: any, context: string, metadata: any = {}) => {
+  console.error(`Error in ${context}:`, error);
+  try {
+    await supabase.from('error_logs').insert({
+      error_type: 'edge_function_error',
+      error_message: error.message,
+      error_stack: error.stack,
+      context,
+      metadata: { ...metadata, error: error.toString() },
+    });
+  } catch (dbError) {
+    console.error('Failed to log error to database:', dbError);
+  }
+};
+
 interface ClientSignupRequest {
   email: string;
   password: string;
@@ -54,7 +70,7 @@ const handler = async (req: Request): Promise<Response> => {
         });
     }
   } catch (error: any) {
-    console.error('Error in client-auth-handler:', error);
+    await logError(error, 'client-auth-handler-main');
     return new Response(
       JSON.stringify({ error: error.message || 'Internal server error' }),
       {
@@ -69,33 +85,22 @@ async function handleClientSignup(req: Request): Promise<Response> {
   const { email, password, companyName, firstName, lastName }: ClientSignupRequest = await req.json();
 
   try {
-    console.log('Starting signup process for:', email);
+    console.log(`Starting signup for: ${email}`);
     
-    const { data: existingUsers, error: userCheckError } = await supabase.auth.admin.listUsers();
+    const { data: existingUsers, error: userCheckError } = await supabase.auth.admin.listUsers({ email });
 
     if (userCheckError) {
-      console.error('Error checking existing users:', userCheckError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to check existing users. Please try again.' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+      await logError(userCheckError, 'handleClientSignup-userCheck', { email });
+      return new Response(JSON.stringify({ error: 'Failed to check user existence.' }), { status: 500, headers: corsHeaders });
     }
 
-    const existingUser = existingUsers.users.find(u => u.email === email);
-    if (existingUser) {
-      return new Response(
-        JSON.stringify({ error: 'User with this email already exists' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+    if (existingUsers.users.length > 0) {
+      return new Response(JSON.stringify({ error: 'User with this email already exists' }), { status: 400, headers: corsHeaders });
     }
 
-    // Generate OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    console.log('Generated OTP:', otpCode, 'for email:', email);
-
-    // Create user account
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -105,57 +110,33 @@ async function handleClientSignup(req: Request): Promise<Response> {
         companyName,
         contactFirstName: firstName,
         contactLastName: lastName,
-        email_verified: false
       }
     });
 
     if (authError) {
-      console.error('Auth error:', authError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to create account. Please try again.' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+      await logError(authError, 'handleClientSignup-createUser', { email });
+      return new Response(JSON.stringify({ error: 'Failed to create account.' }), { status: 400, headers: corsHeaders });
     }
 
-    // Store OTP
-    const { error: otpError } = await supabase
-      .from('user_otp_verification')
-      .insert({
-        email,
-        otp_code: otpCode,
-        expires_at: expiresAt.toISOString(),
-      });
-
-    if (otpError) {
-      console.error('OTP storage error:', otpError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to generate verification code' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
-    }
-
-    // Send email asynchronously
-    sendOTPEmail(email, otpCode, firstName).catch(error => {
-      console.error('Email send error:', error);
+    const { error: otpError } = await supabase.from('user_otp_verification').insert({
+      email,
+      otp_code: otpCode,
+      expires_at: expiresAt.toISOString(),
     });
 
-    console.log('Signup successful for:', email);
+    if (otpError) {
+      await logError(otpError, 'handleClientSignup-storeOTP', { email });
+      return new Response(JSON.stringify({ error: 'Failed to generate verification code' }), { status: 500, headers: corsHeaders });
+    }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Account created successfully. Please check your email for verification code.',
-        userId: authData.user.id
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    );
+    sendOTPEmail(email, otpCode, firstName).catch(e => logError(e, 'handleClientSignup-sendEmail', { email }));
+
+    console.log(`Signup successful for: ${email}`);
+    return new Response(JSON.stringify({ success: true, userId: authData.user.id }), { status: 200, headers: corsHeaders });
 
   } catch (error: any) {
-    console.error('Signup error:', error);
-    return new Response(
-      JSON.stringify({ error: 'An unexpected error occurred. Please try again.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    );
+    await logError(error, 'handleClientSignup-catchAll', { email });
+    return new Response(JSON.stringify({ error: 'An unexpected error occurred.' }), { status: 500, headers: corsHeaders });
   }
 }
 
@@ -163,8 +144,7 @@ async function handleOTPVerification(req: Request): Promise<Response> {
   const { email, otpCode }: ClientOTPVerificationRequest = await req.json();
 
   try {
-    console.log('Verifying OTP for:', email, 'Code:', otpCode);
-
+    console.log(`Verifying OTP for ${email}`);
     const { data: otpData, error: otpError } = await supabase
       .from('user_otp_verification')
       .select('*')
@@ -174,71 +154,28 @@ async function handleOTPVerification(req: Request): Promise<Response> {
       .single();
 
     if (otpError || !otpData) {
-      console.error('OTP not found or error:', otpError);
-      return new Response(
-        JSON.stringify({ error: 'Invalid verification code. Please try again.' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+      await logError(otpError, 'handleOTPVerification-findOTP', { email });
+      return new Response(JSON.stringify({ error: 'Invalid verification code.' }), { status: 400, headers: corsHeaders });
     }
 
-    // Check if OTP is still valid
-    const now = new Date();
-    const expiresAt = new Date(otpData.expires_at);
-    
-    if (now > expiresAt) {
-      console.log('OTP has expired');
-      return new Response(
-        JSON.stringify({ error: 'Verification code has expired. Please request a new one.' }),
-        { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
+    if (new Date() > new Date(otpData.expires_at)) {
+      return new Response(JSON.stringify({ error: 'Verification code has expired.' }), { status: 400, headers: corsHeaders });
     }
 
-    // Mark OTP as verified
-    const { error: updateError } = await supabase
-      .from('user_otp_verification')
-      .update({ verified_at: new Date().toISOString() })
-      .eq('id', otpData.id);
-
-    if (updateError) {
-      console.error('Error marking OTP as verified:', updateError);
+    const { data: userData, error: userError } = await supabase.auth.admin.listUsers({ email });
+    if (userError || !userData.users.length) {
+      await logError(userError, 'handleOTPVerification-findUser', { email });
+      return new Response(JSON.stringify({ error: 'User not found.' }), { status: 404, headers: corsHeaders });
     }
+    const user = userData.users[0];
 
-    // Get user by email
-    const { data: userData, error: userError } = await supabase.auth.admin.listUsers();
-    
-    if (userError) {
-      console.error('Error getting users:', userError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to verify user' }),
-        { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
-    }
-
-    const user = userData.users.find(u => u.email === email);
-    
-    if (!user) {
-      console.error('User not found:', email);
-      return new Response(
-        JSON.stringify({ error: 'User not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-      );
-    }
-
-    // Confirm email and update metadata
     const { error: confirmError } = await supabase.auth.admin.updateUserById(user.id, {
       email_confirm: true,
-      user_metadata: {
-        ...user.user_metadata,
-        email_verified: true
-      }
+      user_metadata: { ...user.user_metadata, email_verified: true }
     });
+    if (confirmError) await logError(confirmError, 'handleOTPVerification-confirmEmail', { userId: user.id });
 
-    if (confirmError) {
-      console.error('Error confirming email:', confirmError);
-    }
-
-    // Ensure client account exists
-    const { data: createResult, error: createError } = await supabase.rpc('ensure_client_account', {
+    const { data: createResult, error: createError } = await supabase.rpc('ensure_client_account_robust', {
       user_id_param: user.id,
       company_name_param: user.user_metadata?.companyName || 'My Company',
       first_name_param: user.user_metadata?.contactFirstName || '',
@@ -246,31 +183,15 @@ async function handleOTPVerification(req: Request): Promise<Response> {
     });
 
     if (createError || !createResult?.success) {
-      console.error('Error creating client account:', createError);
-      // Continue anyway as user is verified
+      await logError(createError || new Error(createResult?.error), 'handleOTPVerification-ensureAccount', { userId: user.id });
     }
 
-    // Add delay to ensure database consistency
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    console.log('OTP verification successful for:', email);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: 'Email verified successfully!',
-        userId: user.id,
-        redirectTo: '/dashboard'
-      }),
-      { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    );
+    console.log(`OTP verification successful for ${email}`);
+    return new Response(JSON.stringify({ success: true, userId: user.id }), { status: 200, headers: corsHeaders });
 
   } catch (error: any) {
-    console.error('OTP verification error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Verification failed. Please try again.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } }
-    );
+    await logError(error, 'handleOTPVerification-catchAll', { email });
+    return new Response(JSON.stringify({ error: 'Verification failed.' }), { status: 500, headers: corsHeaders });
   }
 }
 

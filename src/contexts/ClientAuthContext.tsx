@@ -157,161 +157,121 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   // Enhanced session initialization with retry logic
   const initializeAuth = useCallback(async () => {
     if (initializingRef.current) {
-      console.log('Already initializing auth, skipping...');
+      console.log('AuthContext: Already initializing, skipping.');
       return;
     }
     
     initializingRef.current = true;
-    console.log('Initializing authentication...');
+    console.log('AuthContext: Initializing authentication...');
 
     try {
-      // Try to get session with retries
-      let sessionResult = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          sessionResult = await supabase.auth.getSession();
-          break;
-        } catch (error) {
-          console.error(`Session fetch attempt ${attempt} failed:`, error);
-          if (attempt === 3) throw error;
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        }
-      }
-
-      const { data: { session }, error } = sessionResult;
+      const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
-        console.error('Error getting initial session:', error);
+        console.error('AuthContext: Error getting initial session:', error);
         await logAuthError(error, 'initialize_auth_get_session');
         setLoading(false);
         return;
       }
 
       if (session?.user) {
-        console.log('Found existing session for:', session.user.email);
+        console.log(`AuthContext: Found existing session for: ${session.user.email}`);
         setSession(session);
         setUser(session.user);
         
-        // Ensure client account exists with enhanced error handling
-        const accountCreated = await ensureClientAccount(session.user.id, session.user.user_metadata);
-        
-        if (accountCreated) {
-          // Check client status with enhanced retry logic
-          const isClient = await waitForClientAccount(session.user.id, 5);
-          console.log('Initial client status:', isClient);
-        } else {
-          console.warn('Failed to ensure client account exists');
-          setIsClientAccount(false);
-        }
+        const isClient = await waitForClientAccount(session.user.id, 5);
+        console.log(`AuthContext: Initial client status check: ${isClient}`);
       } else {
-        console.log('No existing session found');
+        console.log('AuthContext: No existing session found.');
         setSession(null);
         setUser(null);
         setIsClientAccount(false);
       }
     } catch (error) {
-      console.error('Exception during auth initialization:', error);
+      console.error('AuthContext: Exception during auth initialization:', error);
       await logAuthError(error, 'initialize_auth_exception');
     } finally {
       setLoading(false);
       initializingRef.current = false;
+      console.log('AuthContext: Initialization complete.');
     }
-  }, [waitForClientAccount, ensureClientAccount, logAuthError]);
+  }, [waitForClientAccount, logAuthError]);
 
   // Enhanced auth state change handler with comprehensive error handling
   const handleAuthStateChange = useCallback(async (event: string, newSession: Session | null) => {
-    console.log('Auth state changed:', event, newSession?.user?.email);
+    console.log(`AuthContext: Auth state changed - Event: ${event}, User: ${newSession?.user?.email}`);
 
-    // Update session and user state immediately
     setSession(newSession);
     setUser(newSession?.user ?? null);
 
     try {
       if (event === 'SIGNED_IN' && newSession?.user) {
-        console.log('User signed in, ensuring client account...');
-        
-        // Ensure client account exists with enhanced error handling
+        console.log(`AuthContext: User signed in (${newSession.user.id}), ensuring client account...`);
         const accountCreated = await ensureClientAccount(newSession.user.id, newSession.user.user_metadata);
         
         if (accountCreated) {
-          // Verify client status with enhanced retry logic
           const isClient = await waitForClientAccount(newSession.user.id, 8);
-          console.log('Client status after sign in:', isClient);
+          console.log(`AuthContext: Client status after sign in: ${isClient}`);
         } else {
-          console.warn('Failed to create client account');
+          console.warn('AuthContext: Failed to create client account on sign in.');
           setIsClientAccount(false);
         }
         
       } else if (event === 'SIGNED_OUT') {
-        console.log('User signed out');
+        console.log('AuthContext: User signed out.');
         setIsClientAccount(false);
         
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-        console.log('Token refreshed, verifying client status...');
+        console.log(`AuthContext: Token refreshed for ${newSession.user.email}, verifying client status...`);
         const isClient = await waitForClientAccount(newSession.user.id, 3);
-        console.log('Client status after token refresh:', isClient);
-        
-      } else if (event === 'PASSWORD_RECOVERY' && newSession?.user) {
-        console.log('Password recovery, verifying client status...');
-        const isClient = await waitForClientAccount(newSession.user.id, 3);
-        console.log('Client status after password recovery:', isClient);
+        console.log(`AuthContext: Client status after token refresh: ${isClient}`);
       }
     } catch (error) {
-      console.error('Error in auth state change handler:', error);
+      console.error('AuthContext: Error in auth state change handler:', error);
       await logAuthError(error, `auth_state_change_${event}`);
     }
   }, [ensureClientAccount, waitForClientAccount, logAuthError]);
 
   // Set up auth listener and initialization
   useEffect(() => {
-    let mounted = true;
-
-    // Set up auth state listener first
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      
-      // Use setTimeout to prevent potential deadlocks
-      setTimeout(() => {
-        if (mounted) {
-          handleAuthStateChange(event, session);
-        }
-      }, 0);
+    console.log('AuthContext: Mounting and setting up auth listener.');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      handleAuthStateChange(event, session);
     });
 
-    // Initialize auth state
     initializeAuth();
 
     return () => {
-      mounted = false;
+      console.log('AuthContext: Unmounting and unsubscribing from auth listener.');
       subscription.unsubscribe();
     };
   }, [initializeAuth, handleAuthStateChange]);
 
   // Enhanced session refresh with retry logic
   const refreshSession = useCallback(async () => {
-    console.log('Manually refreshing session...');
+    console.log('AuthContext: Manually refreshing session...');
     
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.refreshSession();
       
       if (error) {
-        console.error('Error refreshing session:', error);
+        console.error('AuthContext: Error refreshing session:', error);
         await logAuthError(error, 'refresh_session');
         return;
       }
 
+      console.log(`AuthContext: Session refreshed, new user: ${session?.user?.email}`);
       setSession(session);
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        // Verify client status after refresh
         const isClient = await waitForClientAccount(session.user.id, 3);
-        console.log('Client status after manual refresh:', isClient);
+        console.log(`AuthContext: Client status after manual refresh: ${isClient}`);
       } else {
         setIsClientAccount(false);
       }
     } catch (error) {
-      console.error('Exception refreshing session:', error);
+      console.error('AuthContext: Exception refreshing session:', error);
       await logAuthError(error, 'refresh_session_exception');
     }
   }, [waitForClientAccount, logAuthError]);
