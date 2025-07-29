@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { ClientSignUpForm } from '@/components/client/ClientSignUpForm';
 import { ClientSignInForm } from '@/components/client/ClientSignInForm';
 import { ClientPasswordResetForm } from '@/components/client/ClientPasswordResetForm';
-import { EmailVerificationBanner } from '@/components/client/EmailVerificationBanner';
 import { cn } from '@/lib/utils';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
@@ -55,7 +54,6 @@ export default function Welcome() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 relative overflow-hidden">
       <NetworkNodes />
-      <EmailVerificationBanner />
       
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <div className="container max-w-7xl mx-auto">
