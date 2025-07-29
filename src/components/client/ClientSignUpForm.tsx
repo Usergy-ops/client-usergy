@@ -120,6 +120,7 @@ export function ClientSignUpForm() {
     return (
       <OTPVerification
         email={formData.email}
+        password={formData.password}
         onSuccess={handleOTPSuccess}
         onBack={handleBackToSignup}
       />

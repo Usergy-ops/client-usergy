@@ -651,15 +651,6 @@ export type Database = {
         }
         Returns: Json
       }
-      ensure_client_account_robust: {
-        Args: {
-          user_id_param: string
-          company_name_param?: string
-          first_name_param?: string
-          last_name_param?: string
-        }
-        Returns: Json
-      }
       force_create_client_account: {
         Args: { user_id_param: string }
         Returns: boolean
@@ -677,10 +668,6 @@ export type Database = {
           token: string
           expires_at: string
         }[]
-      }
-      get_client_account_status: {
-        Args: { user_id_param: string }
-        Returns: Json
       }
       is_client_account: {
         Args: { user_id_param: string }

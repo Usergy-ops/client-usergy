@@ -21,15 +21,13 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId);
       
-      // Use the new robust ensure function
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+      // Use the new ensure_client_account function
+      const { data: result, error } = await supabase.rpc('ensure_client_account', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
-          userMetadata?.first_name ||
           userMetadata?.full_name?.split(' ')[0] || '',
         last_name_param: userMetadata?.contactLastName || 
-          userMetadata?.last_name ||
           userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
       });
 
@@ -37,7 +35,7 @@ export function useClientAccountCreation() {
         throw error;
       }
 
-      if (result?.success && result?.is_client_account) {
+      if (result?.success && result?.is_client) {
         console.log('Client account created successfully');
         setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
         return { success: true };

@@ -41,6 +41,7 @@ interface ClientSignupRequest {
 interface ClientOTPVerificationRequest {
   email: string;
   otpCode: string;
+  password?: string;
 }
 
 interface ClientResendOTPRequest {
@@ -141,7 +142,7 @@ async function handleClientSignup(req: Request): Promise<Response> {
 }
 
 async function handleOTPVerification(req: Request): Promise<Response> {
-  const { email, otpCode }: ClientOTPVerificationRequest = await req.json();
+  const { email, otpCode, password }: ClientOTPVerificationRequest = await req.json();
 
   try {
     console.log(`Verifying OTP for ${email}`);
@@ -175,8 +176,19 @@ async function handleOTPVerification(req: Request): Promise<Response> {
     });
     if (confirmError) await logError(confirmError, 'handleOTPVerification-confirmEmail', { userId: user.id });
 
+    // Sign in the user to create a session
+    const { data: sessionData, error: sessionError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (sessionError) {
+      await logError(sessionError, 'handleOTPVerification-signIn', { email });
+      return new Response(JSON.stringify({ error: 'Failed to create session.' }), { status: 500, headers: corsHeaders });
+    }
+
     console.log(`OTP verification successful for ${email}`);
-    return new Response(JSON.stringify({ success: true, userId: user.id }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true, userId: user.id, session: sessionData }), { status: 200, headers: corsHeaders });
 
   } catch (error: any) {
     await logError(error, 'handleOTPVerification-catchAll', { email });

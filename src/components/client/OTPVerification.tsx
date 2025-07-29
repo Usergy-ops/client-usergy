@@ -13,16 +13,17 @@ import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface OTPVerificationProps {
   email: string;
+  password?: string;
   onSuccess: () => void;
   onBack: () => void;
 }
 
-export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationProps) {
+export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerificationProps) {
   const [otpCode, setOtpCode] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { refreshSession, waitForClientAccount } = useClientAuth();
+  const { refreshSession } = useClientAuth();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
@@ -35,7 +36,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
 
     setIsProcessing(true);
     try {
-      const result = await verifyOTP(email, otpCode);
+      const result = await verifyOTP(email, otpCode, password);
 
       if (result.success) {
         toast({
@@ -43,12 +44,13 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Setting up your account...",
         });
 
+        // CRITICAL: Wait for session to be established
         console.log('OTP verified, waiting for session...');
         
-        // Wait for session to be established
+        // Give Supabase time to set cookies
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Get fresh session
+        // Force session refresh
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError || !session) {
@@ -63,18 +65,16 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         }
 
         console.log('Session confirmed, refreshing auth context...');
+
+        // Refresh the auth context
         await refreshSession();
         
-        // Wait for client account to be confirmed
-        const isClientAccount = await waitForClientAccount(session.user.id, 6);
+        // Small delay to ensure context is updated
+        await new Promise(resolve => setTimeout(resolve, 500));
         
-        if (isClientAccount) {
-          console.log('Client account confirmed, navigating to dashboard...');
-          navigate('/dashboard', { replace: true });
-        } else {
-          console.log('Client account not confirmed, navigating to profile setup...');
-          navigate('/profile', { replace: true });
-        }
+        // Navigate using React Router
+        console.log('Navigating to profile setup...');
+        navigate('/profile', { replace: true });
         
       } else {
         await logOTPError(
