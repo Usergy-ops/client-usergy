@@ -8,7 +8,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useOTPVerification } from '@/hooks/useOTPVerification';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface OTPVerificationProps {
@@ -23,7 +22,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { setSession } = useClientAuth();
+  const { setSession, waitForClientAccount } = useClientAuth();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
@@ -38,18 +37,26 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
     try {
       const result = await verifyOTP(email, otpCode, password);
 
-      if (result.success) {
+      if (result.success && result.data?.session) {
         toast({
           title: "Email verified successfully!",
           description: "Setting up your account...",
         });
 
         // Set the session in the auth context
-        setSession(result.data.session);
+        setSession(result.data.session.session);
 
-        // Navigate using React Router
-        console.log('Navigating to profile setup...');
-        navigate('/profile', { replace: true });
+        // Wait for the database trigger to create the client account
+        console.log('Waiting for client account creation after OTP verification...');
+        const isClient = await waitForClientAccount(result.data.session.user.id, 10);
+        
+        if (isClient) {
+          console.log('Client account confirmed, navigating to dashboard...');
+          navigate('/dashboard', { replace: true });
+        } else {
+          console.log('Client account not confirmed, navigating to profile setup...');
+          navigate('/profile', { replace: true });
+        }
         
       } else {
         await logOTPError(

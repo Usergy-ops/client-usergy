@@ -6,7 +6,7 @@ import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { session, loading, diagnoseAccount } = useClientAuth();
+  const { session, loading, waitForClientAccount, diagnoseAccount } = useClientAuth();
   const processedRef = useRef(false);
 
   useEffect(() => {
@@ -26,28 +26,37 @@ export default function AuthCallback() {
       console.log(`AuthCallback: Processing for user ${userId}`);
 
       try {
-        // Wait for a short period to allow backend triggers to run
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Give the database trigger some time to process the new user
+        console.log('AuthCallback: Waiting for database trigger processing...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Diagnose account status
-        const diagnosis = await diagnoseAccount(userId);
-        console.log('AuthCallback: Account diagnosis result:', diagnosis);
-
-        if (diagnosis.is_client_account_result) {
+        // Wait for client account creation with more attempts
+        const isClient = await waitForClientAccount(userId, 12);
+        
+        if (isClient) {
           console.log('AuthCallback: Client account confirmed, redirecting to dashboard');
           navigate('/dashboard', { replace: true });
         } else {
-          console.log('AuthCallback: Not a client account, redirecting to profile setup');
-          navigate('/profile', { replace: true });
+          // Diagnose what went wrong
+          const diagnosis = await diagnoseAccount(userId);
+          console.log('AuthCallback: Account diagnosis result:', diagnosis);
+          
+          if (diagnosis.user_exists && diagnosis.account_type_exists) {
+            console.log('AuthCallback: User and account type exist but not client, redirecting to profile setup');
+            navigate('/profile', { replace: true });
+          } else {
+            console.log('AuthCallback: Account setup incomplete, redirecting to home');
+            navigate('/', { replace: true });
+          }
         }
       } catch (error) {
-        console.error('AuthCallback: Error during diagnosis, redirecting to home', error);
+        console.error('AuthCallback: Error during processing, redirecting to home', error);
         navigate('/', { replace: true });
       }
     };
 
     handleCallback();
-  }, [session, loading, navigate, diagnoseAccount]);
+  }, [session, loading, navigate, waitForClientAccount, diagnoseAccount]);
 
   return (
     <div className="min-h-screen relative flex items-center justify-center">
