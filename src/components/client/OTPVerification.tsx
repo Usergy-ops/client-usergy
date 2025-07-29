@@ -23,14 +23,14 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { refreshSession } = useClientAuth();
+  const { setSession } = useClientAuth();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!otpCode || otpCode.length !== 6) {
+    if (!otpCode || otpCode.length !== 6 || !password) {
       return;
     }
 
@@ -44,34 +44,9 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
           description: "Setting up your account...",
         });
 
-        // CRITICAL: Wait for session to be established
-        console.log('OTP verified, waiting for session...');
-        
-        // Give Supabase time to set cookies
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Force session refresh
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError || !session) {
-          console.error('Failed to get session after OTP verification');
-          toast({
-            title: "Session Error",
-            description: "Please try signing in again.",
-            variant: "destructive"
-          });
-          navigate('/', { replace: true });
-          return;
-        }
+        // Set the session in the auth context
+        setSession(result.data.session);
 
-        console.log('Session confirmed, refreshing auth context...');
-
-        // Refresh the auth context
-        await refreshSession();
-        
-        // Small delay to ensure context is updated
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
         // Navigate using React Router
         console.log('Navigating to profile setup...');
         navigate('/profile', { replace: true });

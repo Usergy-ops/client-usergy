@@ -13,6 +13,7 @@ interface ClientAuthContextType {
   signInWithGoogle: () => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  setSession: (session: Session | null) => void;
   waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
   diagnoseAccount: (userId: string) => Promise<any>;
 }
@@ -369,6 +370,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     signInWithGoogle,
     signOut,
     refreshSession,
+    setSession,
     waitForClientAccount,
     diagnoseAccount,
   };
