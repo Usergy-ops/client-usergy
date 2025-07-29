@@ -175,17 +175,6 @@ async function handleOTPVerification(req: Request): Promise<Response> {
     });
     if (confirmError) await logError(confirmError, 'handleOTPVerification-confirmEmail', { userId: user.id });
 
-    const { data: createResult, error: createError } = await supabase.rpc('ensure_client_account_robust', {
-      user_id_param: user.id,
-      company_name_param: user.user_metadata?.companyName || 'My Company',
-      first_name_param: user.user_metadata?.contactFirstName || '',
-      last_name_param: user.user_metadata?.contactLastName || ''
-    });
-
-    if (createError || !createResult?.success) {
-      await logError(createError || new Error(createResult?.error), 'handleOTPVerification-ensureAccount', { userId: user.id });
-    }
-
     console.log(`OTP verification successful for ${email}`);
     return new Response(JSON.stringify({ success: true, userId: user.id }), { status: 200, headers: corsHeaders });
 
