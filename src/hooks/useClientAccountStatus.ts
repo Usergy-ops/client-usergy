@@ -52,7 +52,7 @@ export function useClientAccountStatus() {
     console.log('Ensuring client account exists for user:', userId);
     
     try {
-      const { data: result, error } = await supabase.rpc('ensure_client_account', {
+      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -66,7 +66,7 @@ export function useClientAccountStatus() {
         return false;
       }
 
-      if (result?.success && result?.is_client) {
+      if (result?.success && result?.is_client_account) {
         console.log('Client account ensured successfully');
         return await checkAccountStatus(userId);
       }

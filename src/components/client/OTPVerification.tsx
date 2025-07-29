@@ -22,7 +22,7 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { refreshSession } = useClientAuth();
+  const { refreshSession, waitForClientAccount } = useClientAuth();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
@@ -43,13 +43,12 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
           description: "Setting up your account...",
         });
 
-        // CRITICAL: Wait for session to be established
         console.log('OTP verified, waiting for session...');
         
-        // Give Supabase time to set cookies
+        // Wait for session to be established
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Force session refresh
+        // Get fresh session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError || !session) {
@@ -64,16 +63,18 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         }
 
         console.log('Session confirmed, refreshing auth context...');
-        
-        // Refresh the auth context
         await refreshSession();
         
-        // Small delay to ensure context is updated
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Wait for client account to be confirmed
+        const isClientAccount = await waitForClientAccount(session.user.id, 6);
         
-        // Navigate using React Router
-        console.log('Navigating to profile setup...');
-        navigate('/profile', { replace: true });
+        if (isClientAccount) {
+          console.log('Client account confirmed, navigating to dashboard...');
+          navigate('/dashboard', { replace: true });
+        } else {
+          console.log('Client account not confirmed, navigating to profile setup...');
+          navigate('/profile', { replace: true });
+        }
         
       } else {
         await logOTPError(
