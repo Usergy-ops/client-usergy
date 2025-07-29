@@ -72,8 +72,8 @@ export function OTPVerification({ email, onSuccess, onBack }: OTPVerificationPro
         await new Promise(resolve => setTimeout(resolve, 500));
         
         // Navigate using React Router
-        console.log('Navigating to dashboard...');
-        navigate('/dashboard', { replace: true });
+        console.log('Navigating to profile setup...');
+        navigate('/profile', { replace: true });
         
       } else {
         await logOTPError(

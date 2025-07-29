@@ -68,13 +68,13 @@ export function ClientSignUpForm() {
     
     try {
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
-        body: {
+        body: JSON.stringify({
           email: formData.email,
           password: formData.password,
           companyName: formData.companyName,
           firstName: formData.contactFirstName,
           lastName: formData.contactLastName
-        }
+        })
       });
 
       if (error) {
