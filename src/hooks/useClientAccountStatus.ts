@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AccountStatus {
   isClient: boolean;
@@ -19,6 +19,8 @@ export function useClientAccountStatus() {
     setStatus(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
+      console.log('Checking client account status for user:', userId);
+      
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
       });
@@ -30,6 +32,8 @@ export function useClientAccountStatus() {
       }
 
       const isClientAccount = Boolean(isClient);
+      console.log('Client account status result:', isClientAccount);
+      
       setStatus({
         isClient: isClientAccount,
         isLoading: false,
@@ -39,10 +43,11 @@ export function useClientAccountStatus() {
       return isClientAccount;
     } catch (error) {
       console.error('Exception checking client account status:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(prev => ({ 
         ...prev, 
         isLoading: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+        error: errorMessage
       }));
       return false;
     }
@@ -52,13 +57,13 @@ export function useClientAccountStatus() {
     console.log('Ensuring client account exists for user:', userId, userMetadata);
 
     try {
-      // Use the new unified function that replaces ensure_client_account_robust
+      // Use the enhanced unified function
       const { data: result, error } = await supabase.rpc('create_client_account_unified', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
           userMetadata?.first_name ||
-          userMetadata?.full_name?.split(' ')[0] || '',
+          userMetadata?.full_name?.split(' ')[0] || 'User',
         last_name_param: userMetadata?.contactLastName || 
           userMetadata?.last_name ||
           userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
