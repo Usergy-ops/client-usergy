@@ -60,47 +60,53 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logAuthError]);
 
-  // Enhanced wait for client account with better error handling
-  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 8): Promise<boolean> => {
-    console.log(`Waiting for client account creation for user: ${userId}`);
+  // Enhanced wait for client account with better feedback
+  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10): Promise<boolean> => {
+    console.log(`Enhanced wait: Starting client account verification for user: ${userId}`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        console.log(`Attempt ${attempt}/${maxAttempts} to verify client account...`);
+        console.log(`Enhanced wait: Attempt ${attempt}/${maxAttempts} - Checking client status...`);
         
         const { data: isClient, error } = await supabase.rpc('is_client_account', {
           user_id_param: userId
         });
 
         if (error) {
-          console.error('Error checking client status:', error);
-          await logAuthError(error, `check_client_status_attempt_${attempt}`);
+          console.error(`Enhanced wait: Error on attempt ${attempt}:`, error);
+          await logAuthError(error, `enhanced_check_client_status_attempt_${attempt}`);
           
+          // Continue trying even on errors, but log them
           if (attempt === maxAttempts) {
+            console.error('Enhanced wait: All attempts failed with errors');
             return false;
           }
         } else if (isClient) {
-          console.log('Client account confirmed!');
+          console.log(`Enhanced wait: SUCCESS! Client account confirmed on attempt ${attempt}`);
           setIsClientAccount(true);
           return true;
+        } else {
+          console.log(`Enhanced wait: Attempt ${attempt} - Not yet a client account, waiting...`);
         }
 
-        // Progressive delay with shorter initial waits
+        // Progressive delay with better timing
         if (attempt < maxAttempts) {
-          const delay = Math.min(attempt * 500, 2000); // 500ms, 1s, 1.5s, 2s max
-          console.log(`Waiting ${delay}ms before retry...`);
+          const delay = Math.min(1000 + (attempt * 500), 3000); // Start at 1.5s, max 3s
+          console.log(`Enhanced wait: Waiting ${delay}ms before next attempt...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       } catch (error) {
-        console.error(`Exception on attempt ${attempt}:`, error);
-        await logAuthError(error, `check_client_status_exception_${attempt}`);
+        console.error(`Enhanced wait: Exception on attempt ${attempt}:`, error);
+        await logAuthError(error, `enhanced_check_client_status_exception_${attempt}`);
+        
         if (attempt === maxAttempts) {
+          console.error('Enhanced wait: Final attempt failed with exception');
           return false;
         }
       }
     }
 
-    console.log('Client account not found after all attempts');
+    console.log('Enhanced wait: All attempts exhausted - client account not confirmed');
     setIsClientAccount(false);
     return false;
   }, [logAuthError]);
@@ -188,35 +194,35 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, logAuthError]);
 
-  // Enhanced auth state change handler
+  // Enhanced auth state change handler with better feedback
   const handleAuthStateChange = useCallback(async (event: string, newSession: Session | null) => {
-    console.log(`AuthContext: Auth state changed - Event: ${event}, User: ${newSession?.user?.email}`);
+    console.log(`Enhanced Auth: State changed - Event: ${event}, User: ${newSession?.user?.email}`);
 
     setSession(newSession);
     setUser(newSession?.user ?? null);
 
     try {
       if (event === 'SIGNED_IN' && newSession?.user) {
-        console.log(`AuthContext: User signed in (${newSession.user.id}), waiting for account setup...`);
+        console.log(`Enhanced Auth: User signed in (${newSession.user.id}), enhanced account setup...`);
         
-        // Give the database trigger time to process
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Give more time for the database trigger to process
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const isClient = await waitForClientAccount(newSession.user.id, 8);
-        console.log(`AuthContext: Client status after sign in: ${isClient}`);
+        const isClient = await waitForClientAccount(newSession.user.id, 12);
+        console.log(`Enhanced Auth: Final client status after enhanced sign in: ${isClient}`);
         
       } else if (event === 'SIGNED_OUT') {
-        console.log('AuthContext: User signed out.');
+        console.log('Enhanced Auth: User signed out, clearing state');
         setIsClientAccount(false);
         
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-        console.log(`AuthContext: Token refreshed for ${newSession.user.email}, verifying client status...`);
-        const isClient = await waitForClientAccount(newSession.user.id, 3);
-        console.log(`AuthContext: Client status after token refresh: ${isClient}`);
+        console.log(`Enhanced Auth: Token refreshed for ${newSession.user.email}, verifying client status...`);
+        const isClient = await waitForClientAccount(newSession.user.id, 5);
+        console.log(`Enhanced Auth: Client status after token refresh: ${isClient}`);
       }
     } catch (error) {
-      console.error('AuthContext: Error in auth state change handler:', error);
-      await logAuthError(error, `auth_state_change_${event}`);
+      console.error('Enhanced Auth: Error in enhanced auth state change handler:', error);
+      await logAuthError(error, `enhanced_auth_state_change_${event}`);
     }
   }, [waitForClientAccount, logAuthError]);
 
