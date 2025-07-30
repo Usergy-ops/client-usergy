@@ -8,6 +8,12 @@ interface ClientAccountCreationState {
   error: string | null;
 }
 
+interface CreateClientAccountResult {
+  success: boolean;
+  is_client_account?: boolean;
+  error?: string;
+}
+
 export function useClientAccountCreation() {
   const [state, setState] = useState<ClientAccountCreationState>({
     isCreating: false,
@@ -21,8 +27,8 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId, userMetadata);
       
-      // Use the enhanced unified client account creation function
-      const { data: result, error } = await supabase.rpc('create_client_account_unified', {
+      // Use RPC call with proper typing
+      const { data: result, error } = await supabase.rpc('ensure_client_account_robust' as any, {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -40,12 +46,13 @@ export function useClientAccountCreation() {
 
       console.log('Account creation result:', result);
 
-      if (result?.success && result?.is_client_account) {
+      const typedResult = result as CreateClientAccountResult;
+      if (typedResult?.success && typedResult?.is_client_account) {
         console.log('Client account created successfully');
         setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
-        return { success: true, result };
+        return { success: true, result: typedResult };
       } else {
-        const errorMessage = result?.error || 'Account creation failed';
+        const errorMessage = typedResult?.error || 'Account creation failed';
         console.error('Account creation failed:', errorMessage);
         throw new Error(errorMessage);
       }

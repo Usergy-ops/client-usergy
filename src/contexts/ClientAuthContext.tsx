@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
+import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -15,6 +16,8 @@ interface ClientAuthContextType {
   setSession: (session: Session | null) => void;
   waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
   diagnoseAccount: (userId: string) => Promise<any>;
+  repairAccount: (userId: string, userMetadata?: any) => Promise<boolean>;
+  getAccountHealth: (userId: string) => Promise<any>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -27,28 +30,72 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
 
+  // Enhanced account health check using new diagnostics
+  const getAccountHealth = useCallback(async (userId: string) => {
+    console.log(`Getting account health for user: ${userId}`);
+    
+    try {
+      const health = await ClientAccountDiagnostics.validateClientAccountIntegrity(userId);
+      console.log('Account health report:', health);
+      return health;
+    } catch (error) {
+      console.error('Account health check failed:', error);
+      await logAuthError(error, 'account_health_check_failed');
+      return {
+        userId,
+        userExists: false,
+        hasAccountType: false,
+        accountType: null,
+        hasCompanyProfile: false,
+        isClientVerified: false,
+        issues: ['Health check failed'],
+        recommendations: ['Retry health check'],
+        rawData: {}
+      };
+    }
+  }, [logAuthError]);
+
+  // Enhanced account repair function
+  const repairAccount = useCallback(async (userId: string, userMetadata?: any): Promise<boolean> => {
+    console.log(`Attempting to repair account for user: ${userId}`);
+    
+    try {
+      const repairResult = await ClientAccountDiagnostics.repairClientAccount(userId, userMetadata);
+      
+      if (repairResult.success) {
+        console.log('Account repair successful');
+        // Re-verify client status after repair
+        const isClient = await waitForClientAccount(userId, 5);
+        return isClient;
+      } else {
+        console.error('Account repair failed:', repairResult.error);
+        return false;
+      }
+    } catch (error) {
+      console.error('Account repair exception:', error);
+      await logAuthError(error, 'account_repair_exception');
+      return false;
+    }
+  }, []);
+
   // Enhanced diagnose account function using the comprehensive diagnostic
   const diagnoseAccount = useCallback(async (userId: string) => {
     console.log(`Enhanced Diagnosing account for user: ${userId}`);
     
     try {
-      const { data: result, error } = await supabase.rpc('diagnose_client_account_comprehensive', {
-        user_id_param: userId
-      });
-
-      if (error) {
-        console.error('Error in enhanced diagnose account:', error);
-        await logAuthError(error, 'diagnose_account_rpc_enhanced');
+      const diagnosticResult = await ClientAccountDiagnostics.runComprehensiveDiagnostic(userId);
+      
+      if (diagnosticResult.success) {
+        console.log('Enhanced account diagnosis result:', diagnosticResult.data);
+        return diagnosticResult.data;
+      } else {
+        console.error('Enhanced diagnosis failed:', diagnosticResult.error);
         return {
           user_exists: false,
-          error: error.message,
+          error: diagnosticResult.error,
           is_client_account_result: false
         };
       }
-
-      console.log('Enhanced account diagnosis result:', result);
-      return result;
-      
     } catch (error) {
       console.error('Enhanced account diagnosis failed:', error);
       await logAuthError(error, 'diagnose_account_exception_enhanced');
@@ -60,58 +107,63 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logAuthError]);
 
-  // Enhanced wait for client account with RLS-aware checks
+  // Enhanced wait for client account with better error handling and recovery
   const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10): Promise<boolean> => {
-    console.log(`Enhanced wait: Starting RLS-aware client account verification for user: ${userId}`);
+    console.log(`Enhanced wait: Starting client account verification for user: ${userId}`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        console.log(`Enhanced wait: Attempt ${attempt}/${maxAttempts} - Checking client status with RLS...`);
+        console.log(`Enhanced wait: Attempt ${attempt}/${maxAttempts} - Checking client status...`);
         
         const { data: isClient, error } = await supabase.rpc('is_client_account', {
           user_id_param: userId
         });
 
         if (error) {
-          console.error(`Enhanced wait: RLS Error on attempt ${attempt}:`, error);
-          await logAuthError(error, `enhanced_check_client_status_rls_attempt_${attempt}`);
+          console.error(`Enhanced wait: Error on attempt ${attempt}:`, error);
+          await logAuthError(error, `enhanced_check_client_status_attempt_${attempt}`);
           
-          // Continue trying even on errors, but log them
+          // On final attempt, try to repair the account
           if (attempt === maxAttempts) {
-            console.error('Enhanced wait: All RLS attempts failed with errors');
+            console.log('Final attempt failed, trying account repair...');
+            const repaired = await repairAccount(userId);
+            if (repaired) {
+              setIsClientAccount(true);
+              return true;
+            }
             return false;
           }
         } else if (isClient) {
-          console.log(`Enhanced wait: SUCCESS! RLS-verified client account confirmed on attempt ${attempt}`);
+          console.log(`Enhanced wait: SUCCESS! Client account confirmed on attempt ${attempt}`);
           setIsClientAccount(true);
           return true;
         } else {
-          console.log(`Enhanced wait: Attempt ${attempt} - Not yet a client account in RLS context, waiting...`);
+          console.log(`Enhanced wait: Attempt ${attempt} - Not yet a client account, waiting...`);
         }
 
-        // Progressive delay with better timing for RLS operations
+        // Progressive delay with better timing
         if (attempt < maxAttempts) {
-          const delay = Math.min(1500 + (attempt * 750), 4000); // Start at 2.25s, max 4s for RLS
-          console.log(`Enhanced wait: Waiting ${delay}ms before next RLS attempt...`);
+          const delay = Math.min(1000 + (attempt * 500), 3000); // Start at 1.5s, max 3s
+          console.log(`Enhanced wait: Waiting ${delay}ms before next attempt...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       } catch (error) {
-        console.error(`Enhanced wait: RLS Exception on attempt ${attempt}:`, error);
-        await logAuthError(error, `enhanced_check_client_status_rls_exception_${attempt}`);
+        console.error(`Enhanced wait: Exception on attempt ${attempt}:`, error);
+        await logAuthError(error, `enhanced_check_client_status_exception_${attempt}`);
         
         if (attempt === maxAttempts) {
-          console.error('Enhanced wait: Final RLS attempt failed with exception');
+          console.error('Enhanced wait: Final attempt failed with exception');
           return false;
         }
       }
     }
 
-    console.log('Enhanced wait: All RLS attempts exhausted - client account not confirmed');
+    console.log('Enhanced wait: All attempts exhausted - client account not confirmed');
     setIsClientAccount(false);
     return false;
-  }, [logAuthError]);
+  }, [logAuthError, repairAccount]);
 
-  // Enhanced session initialization with RLS support
+  // Enhanced session initialization
   const initializeAuth = useCallback(async () => {
     if (initializingRef.current) {
       console.log('AuthContext: Already initializing, skipping.');
@@ -119,7 +171,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
     
     initializingRef.current = true;
-    console.log('AuthContext: Initializing enhanced authentication with RLS support...');
+    console.log('AuthContext: Initializing enhanced authentication...');
 
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
@@ -136,11 +188,11 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         setSession(session);
         setUser(session.user);
         
-        // Give the RLS policies and database triggers more time to process
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Give more time for database operations to complete
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
         const isClient = await waitForClientAccount(session.user.id, 8);
-        console.log(`AuthContext: Initial RLS-verified client status check: ${isClient}`);
+        console.log(`AuthContext: Initial client status check: ${isClient}`);
       } else {
         console.log('AuthContext: No existing session found.');
         setSession(null);
@@ -157,35 +209,35 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, logAuthError]);
 
-  // Enhanced auth state change handler with RLS awareness
+  // Enhanced auth state change handler
   const handleAuthStateChange = useCallback(async (event: string, newSession: Session | null) => {
-    console.log(`Enhanced Auth: RLS-aware state changed - Event: ${event}, User: ${newSession?.user?.email}`);
+    console.log(`Enhanced Auth: State changed - Event: ${event}, User: ${newSession?.user?.email}`);
 
     setSession(newSession);
     setUser(newSession?.user ?? null);
 
     try {
       if (event === 'SIGNED_IN' && newSession?.user) {
-        console.log(`Enhanced Auth: User signed in (${newSession.user.id}), enhanced RLS account setup...`);
+        console.log(`Enhanced Auth: User signed in (${newSession.user.id}), enhanced account setup...`);
         
-        // Give more time for RLS policies and database triggers to process
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Give more time for database triggers and operations
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const isClient = await waitForClientAccount(newSession.user.id, 15);
-        console.log(`Enhanced Auth: Final RLS-verified client status after enhanced sign in: ${isClient}`);
+        const isClient = await waitForClientAccount(newSession.user.id, 12);
+        console.log(`Enhanced Auth: Final client status after enhanced sign in: ${isClient}`);
         
       } else if (event === 'SIGNED_OUT') {
-        console.log('Enhanced Auth: User signed out, clearing RLS state');
+        console.log('Enhanced Auth: User signed out, clearing state');
         setIsClientAccount(false);
         
       } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-        console.log(`Enhanced Auth: Token refreshed for ${newSession.user.email}, verifying RLS client status...`);
-        const isClient = await waitForClientAccount(newSession.user.id, 5);
-        console.log(`Enhanced Auth: RLS-verified client status after token refresh: ${isClient}`);
+        console.log(`Enhanced Auth: Token refreshed for ${newSession.user.email}, verifying client status...`);
+        const isClient = await waitForClientAccount(newSession.user.id, 3);
+        console.log(`Enhanced Auth: Client status after token refresh: ${isClient}`);
       }
     } catch (error) {
-      console.error('Enhanced Auth: Error in RLS-aware auth state change handler:', error);
-      await logAuthError(error, `enhanced_auth_state_change_rls_${event}`);
+      console.error('Enhanced Auth: Error in auth state change handler:', error);
+      await logAuthError(error, `enhanced_auth_state_change_${event}`);
     }
   }, [waitForClientAccount, logAuthError]);
 
@@ -324,6 +376,8 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     setSession,
     waitForClientAccount,
     diagnoseAccount,
+    repairAccount,
+    getAccountHealth,
   };
 
   return (

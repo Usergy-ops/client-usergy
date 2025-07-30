@@ -3,19 +3,22 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
+import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
 
 export function TestConnection() {
-  const { user, diagnoseAccount } = useClientAuth();
+  const { user, diagnoseAccount, repairAccount, getAccountHealth } = useClientAuth();
   const [status, setStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [clientStatus, setClientStatus] = useState<any>(null);
   const [diagnosticInfo, setDiagnosticInfo] = useState<any>(null);
   const [rlsTestResults, setRlsTestResults] = useState<any[]>([]);
+  const [accountHealth, setAccountHealth] = useState<any>(null);
+  const [isRepairing, setIsRepairing] = useState(false);
 
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        // Test basic database connection with RLS-enabled table
+        // Test basic database connection
         const { data, error } = await supabase
           .from('account_types')
           .select('id, account_type')
@@ -25,7 +28,7 @@ export function TestConnection() {
         
         console.log('Basic connection test passed:', data);
         
-        // Test the enhanced RPC function if user is logged in
+        // Test the client check function if user is logged in
         if (user) {
           const { data: clientCheck, error: clientError } = await supabase.rpc('is_client_account', {
             user_id_param: user.id
@@ -62,20 +65,30 @@ export function TestConnection() {
     }
   };
 
+  const runHealthCheck = async () => {
+    if (!user) return;
+    
+    try {
+      const health = await getAccountHealth(user.id);
+      setAccountHealth(health);
+    } catch (error) {
+      console.error('Health check error:', error);
+      setAccountHealth({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  };
+
   const testRLSPolicies = async () => {
     if (!user) return;
     
     try {
-      const { data: results, error } = await supabase.rpc('test_rls_policies_for_user', {
-        test_user_id: user.id
-      });
+      const result = await ClientAccountDiagnostics.checkRLSPolicies(user.id);
       
-      if (error) {
-        console.error('RLS test error:', error);
-        setRlsTestResults([{ error: error.message }]);
+      if (result.success) {
+        console.log('RLS test results:', result.data);
+        setRlsTestResults(result.data || []);
       } else {
-        console.log('RLS test results:', results);
-        setRlsTestResults(results || []);
+        console.error('RLS test error:', result.error);
+        setRlsTestResults([{ error: result.error }]);
       }
     } catch (error) {
       console.error('RLS test exception:', error);
@@ -83,30 +96,26 @@ export function TestConnection() {
     }
   };
 
-  const forceCreateAccount = async () => {
+  const performRepair = async () => {
     if (!user) return;
     
+    setIsRepairing(true);
     try {
-      console.log('Force creating client account...');
-      const { data: result, error } = await supabase.rpc('create_client_account_unified', {
-        user_id_param: user.id,
-        company_name_param: 'Test Company',
-        first_name_param: user.user_metadata?.first_name || 'Test',
-        last_name_param: user.user_metadata?.last_name || 'User'
-      });
+      console.log('Performing account repair...');
+      const repairSuccess = await repairAccount(user.id, user.user_metadata);
       
-      if (error) {
-        console.error('Force create error:', error);
-        setDiagnosticInfo({ error: error.message });
+      if (repairSuccess) {
+        setDiagnosticInfo({ message: 'Account repair successful' });
+        // Re-run health check after repair
+        setTimeout(runHealthCheck, 1000);
       } else {
-        console.log('Force create result:', result);
-        setDiagnosticInfo(result);
-        // Re-run diagnostic after force create
-        setTimeout(runDiagnostic, 1000);
+        setDiagnosticInfo({ error: 'Account repair failed' });
       }
     } catch (error) {
-      console.error('Force create exception:', error);
+      console.error('Repair error:', error);
       setDiagnosticInfo({ error: error instanceof Error ? error.message : 'Unknown error' });
+    } finally {
+      setIsRepairing(false);
     }
   };
 
@@ -145,13 +154,54 @@ export function TestConnection() {
               Run Enhanced Diagnostic
             </Button>
             
+            <Button onClick={runHealthCheck} variant="outline" size="sm">
+              Check Account Health
+            </Button>
+            
             <Button onClick={testRLSPolicies} variant="outline" size="sm">
               Test RLS Policies
             </Button>
             
-            <Button onClick={forceCreateAccount} variant="outline" size="sm">
-              Force Create Client Account
+            <Button 
+              onClick={performRepair} 
+              variant="outline" 
+              size="sm"
+              disabled={isRepairing}
+            >
+              {isRepairing ? 'Repairing...' : 'Repair Account'}
             </Button>
+          </div>
+        </div>
+      )}
+      
+      {accountHealth && (
+        <div className="mt-4 p-3 bg-muted rounded-lg">
+          <h3 className="text-sm font-semibold mb-2">Account Health Report:</h3>
+          <div className="text-xs space-y-1">
+            <div>User ID: {accountHealth.userId}</div>
+            <div>User Exists: {accountHealth.userExists ? '✓' : '✗'}</div>
+            <div>Has Account Type: {accountHealth.hasAccountType ? '✓' : '✗'}</div>
+            <div>Account Type: {accountHealth.accountType || 'None'}</div>
+            <div>Has Company Profile: {accountHealth.hasCompanyProfile ? '✓' : '✗'}</div>
+            <div>Is Client Verified: {accountHealth.isClientVerified ? '✓' : '✗'}</div>
+            
+            {accountHealth.issues && accountHealth.issues.length > 0 && (
+              <div className="mt-2 text-orange-600">
+                <div className="font-semibold">Issues:</div>
+                {accountHealth.issues.map((issue: string, idx: number) => (
+                  <div key={idx}>• {issue}</div>
+                ))}
+              </div>
+            )}
+            
+            {accountHealth.recommendations && accountHealth.recommendations.length > 0 && (
+              <div className="mt-2 text-blue-600">
+                <div className="font-semibold">Recommendations:</div>
+                {accountHealth.recommendations.map((rec: string, idx: number) => (
+                  <div key={idx}>• {rec}</div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -162,6 +212,8 @@ export function TestConnection() {
           <div className="text-xs space-y-1">
             {diagnosticInfo.error ? (
               <div className="text-red-600">Error: {diagnosticInfo.error}</div>
+            ) : diagnosticInfo.message ? (
+              <div className="text-green-600">{diagnosticInfo.message}</div>
             ) : (
               <>
                 <div>User Exists: {diagnosticInfo.user_exists ? '✓' : '✗'}</div>
@@ -181,7 +233,7 @@ export function TestConnection() {
                   </div>
                 )}
                 {diagnosticInfo.recommendations && diagnosticInfo.recommendations.length > 0 && (
-                  <div className="mt-2 text-blue-600">
+                  <div className="mt-4 text-blue-600">
                     <div className="font-semibold">Recommendations:</div>
                     {diagnosticInfo.recommendations.map((rec: string, idx: number) => (
                       <div key={idx}>• {rec}</div>
@@ -200,8 +252,14 @@ export function TestConnection() {
           <div className="text-xs space-y-1">
             {rlsTestResults.map((result, idx) => (
               <div key={idx} className={result.can_access ? 'text-green-600' : 'text-red-600'}>
-                {result.table_name} {result.operation}: {result.can_access ? '✓' : '✗'}
-                {result.error_message && ` (${result.error_message})`}
+                {result.error ? (
+                  <span>Error: {result.error}</span>
+                ) : (
+                  <span>
+                    {result.table_name} {result.operation}: {result.can_access ? '✓' : '✗'}
+                    {result.error_message && ` (${result.error_message})`}
+                  </span>
+                )}
               </div>
             ))}
           </div>

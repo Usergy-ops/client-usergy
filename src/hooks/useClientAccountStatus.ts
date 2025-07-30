@@ -8,6 +8,12 @@ interface AccountStatus {
   error: string | null;
 }
 
+interface CreateClientAccountResult {
+  success: boolean;
+  is_client_account?: boolean;
+  error?: string;
+}
+
 export function useClientAccountStatus() {
   const [status, setStatus] = useState<AccountStatus>({
     isClient: false,
@@ -57,8 +63,8 @@ export function useClientAccountStatus() {
     console.log('Ensuring client account exists for user:', userId, userMetadata);
 
     try {
-      // Use the enhanced unified function
-      const { data: result, error } = await supabase.rpc('create_client_account_unified', {
+      // Use the robust ensure function with proper typing
+      const { data: result, error } = await supabase.rpc('ensure_client_account_robust' as any, {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -74,8 +80,9 @@ export function useClientAccountStatus() {
         return false;
       }
 
-      if (result?.success && result?.is_client_account) {
-        console.log('Client account ensured successfully:', result);
+      const typedResult = result as CreateClientAccountResult;
+      if (typedResult?.success && typedResult?.is_client_account) {
+        console.log('Client account ensured successfully:', typedResult);
         return await checkAccountStatus(userId);
       }
 
