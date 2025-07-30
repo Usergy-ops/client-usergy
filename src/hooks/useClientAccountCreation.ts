@@ -21,8 +21,8 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId);
       
-      // Use the updated ensure_client_account_robust function
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+      // Use the new unified client account creation function
+      const { data: result, error } = await supabase.rpc('create_client_account_unified', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 

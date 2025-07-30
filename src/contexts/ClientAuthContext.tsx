@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
@@ -28,12 +27,12 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
 
-  // Enhanced diagnose account function using the updated RPC
+  // Enhanced diagnose account function using the new comprehensive diagnostic
   const diagnoseAccount = useCallback(async (userId: string) => {
     console.log(`Diagnosing account for user: ${userId}`);
     
     try {
-      const { data: result, error } = await supabase.rpc('get_client_account_status', {
+      const { data: result, error } = await supabase.rpc('diagnose_client_account_comprehensive', {
         user_id_param: userId
       });
 
@@ -43,7 +42,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         return {
           user_exists: false,
           error: error.message,
-          is_client_account_result: false
+          is_client_account: false
         };
       }
 
@@ -56,7 +55,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       return {
         user_exists: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        is_client_account_result: false
+        is_client_account: false
       };
     }
   }, [logAuthError]);
@@ -106,12 +105,12 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     return false;
   }, [logAuthError]);
 
-  // Enhanced client account creation with better error handling
+  // Enhanced client account creation with the new unified function
   const ensureClientAccount = useCallback(async (userId: string, userMetadata: any) => {
     console.log('Ensuring client account for user:', userId, userMetadata);
 
     try {
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+      const { data: result, error } = await supabase.rpc('create_client_account_unified', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName ||
@@ -124,7 +123,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
       if (error) {
         console.error('Error ensuring client account:', error);
-        await logAuthError(error, 'ensure_client_account_robust');
+        await logAuthError(error, 'create_client_account_unified');
         return false;
       }
 
@@ -133,12 +132,12 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         return true;
       } else {
         console.error('Client account creation failed:', result?.error);
-        await logAuthError(new Error(result?.error || 'Unknown error'), 'ensure_client_account_failed');
+        await logAuthError(new Error(result?.error || 'Unknown error'), 'create_client_account_failed');
         return false;
       }
     } catch (error) {
       console.error('Exception ensuring client account:', error);
-      await logAuthError(error, 'ensure_client_account_exception');
+      await logAuthError(error, 'create_client_account_exception');
       return false;
     }
   }, [logAuthError]);
@@ -221,7 +220,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, logAuthError]);
 
-  // Set up auth listener and initialization
   useEffect(() => {
     console.log('AuthContext: Mounting and setting up auth listener.');
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -236,7 +234,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     };
   }, [initializeAuth, handleAuthStateChange]);
 
-  // Enhanced session refresh
   const refreshSession = useCallback(async () => {
     console.log('AuthContext: Manually refreshing session...');
     
@@ -265,7 +262,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [waitForClientAccount, logAuthError]);
 
-  // Enhanced sign in
   const signIn = async (email: string, password: string) => {
     try {
       console.log('Signing in with email:', email);
@@ -290,7 +286,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Enhanced Google OAuth
   const signInWithGoogle = async () => {
     try {
       console.log('Initiating Google OAuth...');
@@ -321,7 +316,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Enhanced sign out
   const signOut = async () => {
     try {
       console.log('Signing out...');

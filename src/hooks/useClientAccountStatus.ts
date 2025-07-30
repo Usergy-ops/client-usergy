@@ -49,10 +49,11 @@ export function useClientAccountStatus() {
   }, []);
 
   const ensureClientAccount = useCallback(async (userId: string, userMetadata: any): Promise<boolean> => {
-    console.log('Ensuring client account exists for user:', userId);
-    
+    console.log('Ensuring client account exists for user:', userId, userMetadata);
+
     try {
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+      // Use the new unified function that replaces ensure_client_account_robust
+      const { data: result, error } = await supabase.rpc('create_client_account_unified', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -69,7 +70,7 @@ export function useClientAccountStatus() {
       }
 
       if (result?.success && result?.is_client_account) {
-        console.log('Client account ensured successfully');
+        console.log('Client account ensured successfully:', result);
         return await checkAccountStatus(userId);
       }
 

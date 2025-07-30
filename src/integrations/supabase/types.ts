@@ -417,15 +417,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_devices_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       user_otp_verification: {
         Row: {
@@ -494,15 +486,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_skills_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       user_social_presence: {
         Row: {
@@ -570,21 +554,17 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_tech_fluency_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      assign_account_type_by_domain: {
+        Args: { user_id_param: string; user_email: string }
+        Returns: Json
+      }
       calculate_profile_completion: {
         Args: { user_uuid: string }
         Returns: number
@@ -660,6 +640,18 @@ export type Database = {
         }
         Returns: Json
       }
+      ensure_profile_exists: {
+        Args: { user_uuid: string; user_email: string; user_full_name?: string }
+        Returns: boolean
+      }
+      ensure_user_has_account_type: {
+        Args: { user_id_param?: string }
+        Returns: boolean
+      }
+      fix_existing_users_without_account_types: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       force_create_client_account: {
         Args: { user_id_param: string }
         Returns: boolean
@@ -682,9 +674,21 @@ export type Database = {
         Args: { user_id_param: string }
         Returns: Json
       }
+      get_user_account_type: {
+        Args: { user_id_param?: string }
+        Returns: string
+      }
       is_client_account: {
         Args: { user_id_param: string }
         Returns: boolean
+      }
+      is_user_account: {
+        Args: { user_id_param?: string }
+        Returns: boolean
+      }
+      monitor_account_type_coverage: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       validate_password_requirements: {
         Args: { password_hash: string }
