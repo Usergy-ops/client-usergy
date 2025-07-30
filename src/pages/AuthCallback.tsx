@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
