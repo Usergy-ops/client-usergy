@@ -162,8 +162,7 @@ export default function ProfileSetup() {
 
       const { error } = await supabase
         .from('client_workspace.company_profiles')
-        .insert({
-          auth_user_id: user?.id,
+        .update({
           company_name: formData.companyName,
           company_website: formData.websiteUrl || null,
           industry: formData.industry,
@@ -175,7 +174,8 @@ export default function ProfileSetup() {
           company_timezone: formData.companyTimezone,
           company_logo_url: logoUrl,
           onboarding_status: 'completed'
-        });
+        })
+        .eq('auth_user_id', user?.id);
 
       if (error) throw error;
 

@@ -17,12 +17,12 @@ export function useOTPVerification() {
     isSuccess: false,
   });
 
-  const verifyOTP = useCallback(async (email: string, otpCode: string) => {
+  const verifyOTP = useCallback(async (email: string, otpCode: string, password?: string) => {
     setState(prev => ({ ...prev, isVerifying: true, error: null }));
 
     try {
       const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: { email, otpCode }
+        body: { email, otpCode, password }
       });
 
       if (error) {

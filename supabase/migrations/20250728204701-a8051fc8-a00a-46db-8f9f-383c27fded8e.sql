@@ -162,13 +162,14 @@ BEGIN
   BEGIN
     INSERT INTO public.account_types (auth_user_id, account_type)
     VALUES (user_id_param, 'client')
-    ON CONFLICT (auth_user_id, account_type) DO UPDATE SET 
+    ON CONFLICT (auth_user_id) DO UPDATE SET
       account_type = 'client',
       created_at = COALESCE(account_types.created_at, NOW());
     
     account_created := true;
   EXCEPTION
     WHEN OTHERS THEN
+      PERFORM public.log_db_error('ensure_client_account_robust-account_type', SQLERRM, jsonb_build_object('user_id', user_id_param));
       RETURN jsonb_build_object(
         'success', false,
         'error', 'Failed to create account type: ' || SQLERRM,
@@ -201,6 +202,7 @@ BEGIN
     profile_created := true;
   EXCEPTION
     WHEN OTHERS THEN
+      PERFORM public.log_db_error('ensure_client_account_robust-profile', SQLERRM, jsonb_build_object('user_id', user_id_param));
       RETURN jsonb_build_object(
         'success', false,
         'error', 'Failed to create profile: ' || SQLERRM,
@@ -243,6 +245,7 @@ BEGIN
       company_profile_created := true;
     EXCEPTION
       WHEN OTHERS THEN
+        PERFORM public.log_db_error('ensure_client_account_robust-company_profile', SQLERRM, jsonb_build_object('user_id', user_id_param));
         RETURN jsonb_build_object(
           'success', false,
           'error', 'Failed to create company profile: ' || SQLERRM,
@@ -262,6 +265,7 @@ BEGIN
       'is_client', true
     );
   ELSE
+    PERFORM public.log_db_error('ensure_client_account_robust-verification', 'Verification failed after creation', jsonb_build_object('user_id', user_id_param));
     RETURN jsonb_build_object(
       'success', false,
       'error', 'Client account verification failed after creation',

@@ -58,20 +58,12 @@ BEGIN
   ) INTO account_exists;
   
   -- Log the check for debugging
-  INSERT INTO public.error_logs (
-    error_type,
-    error_message,
-    context,
-    user_id,
-    metadata
-  ) VALUES (
-    'debug',
-    'is_client_account check',
-    'is_client_account_function',
-    user_id_param,
+  PERFORM public.log_db_error(
+    'is_client_account_check',
+    'Check completed',
     jsonb_build_object(
-      'result', account_exists,
-      'timestamp', now()
+      'user_id', user_id_param,
+      'result', account_exists
     )
   );
   

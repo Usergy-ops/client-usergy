@@ -35,72 +35,6 @@ export type Database = {
         }
         Relationships: []
       }
-      client_email_confirmations: {
-        Row: {
-          confirmed_at: string | null
-          created_at: string
-          expires_at: string
-          id: string
-          ip_address: unknown | null
-          token: string
-          user_agent: string | null
-          user_id: string
-        }
-        Insert: {
-          confirmed_at?: string | null
-          created_at?: string
-          expires_at: string
-          id?: string
-          ip_address?: unknown | null
-          token: string
-          user_agent?: string | null
-          user_id: string
-        }
-        Update: {
-          confirmed_at?: string | null
-          created_at?: string
-          expires_at?: string
-          id?: string
-          ip_address?: unknown | null
-          token?: string
-          user_agent?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
-      client_password_resets: {
-        Row: {
-          created_at: string
-          expires_at: string
-          id: string
-          ip_address: unknown | null
-          token: string
-          used_at: string | null
-          user_agent: string | null
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          expires_at: string
-          id?: string
-          ip_address?: unknown | null
-          token: string
-          used_at?: string | null
-          user_agent?: string | null
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          expires_at?: string
-          id?: string
-          ip_address?: unknown | null
-          token?: string
-          used_at?: string | null
-          user_agent?: string | null
-          user_id?: string
-        }
-        Relationships: []
-      }
       consolidated_social_presence: {
         Row: {
           additional_links: string[] | null
@@ -417,53 +351,6 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_devices_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
-      }
-      user_otp_verification: {
-        Row: {
-          attempts: number | null
-          blocked_until: string | null
-          created_at: string | null
-          email: string
-          expires_at: string
-          id: string
-          ip_address: unknown | null
-          otp_code: string
-          user_agent: string | null
-          verified_at: string | null
-        }
-        Insert: {
-          attempts?: number | null
-          blocked_until?: string | null
-          created_at?: string | null
-          email: string
-          expires_at: string
-          id?: string
-          ip_address?: unknown | null
-          otp_code: string
-          user_agent?: string | null
-          verified_at?: string | null
-        }
-        Update: {
-          attempts?: number | null
-          blocked_until?: string | null
-          created_at?: string | null
-          email?: string
-          expires_at?: string
-          id?: string
-          ip_address?: unknown | null
-          otp_code?: string
-          user_agent?: string | null
-          verified_at?: string | null
-        }
         Relationships: []
       }
       user_skills: {
@@ -494,15 +381,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_skills_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
       user_social_presence: {
         Row: {
@@ -570,21 +449,17 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "user_tech_fluency_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      assign_account_type_by_domain: {
+        Args: { user_id_param: string; user_email: string }
+        Returns: Json
+      }
       calculate_profile_completion: {
         Args: { user_uuid: string }
         Returns: number
@@ -592,13 +467,6 @@ export type Database = {
       check_email_exists_for_account_type: {
         Args: { email_param: string; account_type_param: string }
         Returns: boolean
-      }
-      check_user_is_client: {
-        Args: { user_id_param: string }
-        Returns: {
-          is_client: boolean
-          account_exists: boolean
-        }[]
       }
       cleanup_expired_otp: {
         Args: Record<PropertyKey, never>
@@ -620,58 +488,42 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
-      create_client_account_for_user: {
+      ensure_client_account_robust: {
         Args: {
           user_id_param: string
           company_name_param?: string
           first_name_param?: string
           last_name_param?: string
         }
+        Returns: Json
+      }
+      ensure_profile_exists: {
+        Args: { user_uuid: string; user_email: string; user_full_name?: string }
         Returns: boolean
       }
-      create_client_account_safe: {
-        Args: {
-          user_id_param: string
-          company_name_param?: string
-          first_name_param?: string
-          last_name_param?: string
-        }
-        Returns: Json
-      }
-      diagnose_user_account: {
-        Args: { user_id_param: string }
-        Returns: Json
-      }
-      ensure_client_account: {
-        Args: {
-          user_id_param: string
-          company_name_param?: string
-          first_name_param?: string
-          last_name_param?: string
-        }
-        Returns: Json
-      }
-      force_create_client_account: {
-        Args: { user_id_param: string }
+      ensure_user_has_account_type: {
+        Args: { user_id_param?: string }
         Returns: boolean
       }
-      generate_client_email_confirmation_token: {
-        Args: { user_id_param: string }
-        Returns: {
-          token: string
-          expires_at: string
-        }[]
+      fix_existing_users_without_account_types: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
-      generate_client_password_reset_token: {
-        Args: { user_email: string }
-        Returns: {
-          token: string
-          expires_at: string
-        }[]
+      get_user_account_type: {
+        Args: { user_id_param?: string }
+        Returns: string
       }
       is_client_account: {
-        Args: { user_id_param: string }
+        Args: { user_id_param?: string }
         Returns: boolean
+      }
+      is_user_account: {
+        Args: { user_id_param?: string }
+        Returns: boolean
+      }
+      monitor_account_type_coverage: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       validate_password_requirements: {
         Args: { password_hash: string }

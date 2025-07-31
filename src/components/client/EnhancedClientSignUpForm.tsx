@@ -4,11 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, CheckCircle, Mail } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Mail, RefreshCw, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { StreamlinedOTPVerification } from './StreamlinedOTPVerification';
 import { SignupProgressIndicator } from './SignupProgressIndicator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface SignUpForm {
   companyName: string;
@@ -38,16 +39,19 @@ const validatePassword = (password: string): boolean => {
   return password.length >= 8 && /[a-zA-Z]/.test(password) && /[0-9]/.test(password);
 };
 
-export function ClientSignUpForm() {
+export function EnhancedClientSignUpForm() {
   const [formData, setFormData] = useState<SignUpForm>(initialFormState);
   const [error, setError] = useState<string>('');
   const [currentView, setCurrentView] = useState<View>('signup-form');
   const [signupStatus, setSignupStatus] = useState<SignupStatus>('idle');
   const [emailSent, setEmailSent] = useState<boolean>(false);
+  const [diagnostic, setDiagnostic] = useState<any>(null);
+  const [canRetry, setCanRetry] = useState<boolean>(false);
 
   const updateFormData = (field: keyof SignUpForm, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setError('');
+    setCanRetry(false);
   };
 
   const validateForm = (): boolean => {
@@ -76,9 +80,11 @@ export function ClientSignUpForm() {
     
     setSignupStatus('creating');
     setError('');
+    setDiagnostic(null);
+    setCanRetry(false);
 
     try {
-      console.log('Starting streamlined client sign up process...');
+      console.log('Starting enhanced client sign up process...');
       
       const { data, error: signUpError } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {
@@ -91,23 +97,29 @@ export function ClientSignUpForm() {
       });
 
       if (signUpError) {
-        console.error('Sign up error:', signUpError);
+        console.error('Enhanced sign up error:', signUpError);
         setSignupStatus('error');
-        
-        if (signUpError.message?.includes('already exists')) {
-          setError('An account with this email already exists. Please sign in instead.');
-        } else {
-          setError(`Sign up failed: ${signUpError.message}`);
-        }
+        setError(`Sign up failed: ${signUpError.message}`);
+        setCanRetry(true);
         return;
       }
 
       if (data?.error) {
-        console.error('Sign up response error:', data.error);
+        console.error('Enhanced sign up response error:', data.error);
         setSignupStatus('error');
+        setDiagnostic(data.diagnostic);
+        setCanRetry(data.can_retry || false);
         
+        // Enhanced error handling with better user messaging
         if (data.error.includes('already exists')) {
-          setError('An account with this email already exists. Please sign in instead.');
+          if (data.can_retry) {
+            setError('We found an old incomplete signup for this email. We\'ve cleaned it up - please try again in a moment.');
+          } else {
+            setError('An account with this email already exists. Please sign in instead.');
+          }
+        } else if (data.error.includes('signup is already in progress')) {
+          setError('A signup is already in progress for this email. Please check your email for verification or try again in a few minutes.');
+          setCanRetry(true);
         } else {
           setError(`Sign up failed: ${data.error}`);
         }
@@ -115,30 +127,36 @@ export function ClientSignUpForm() {
       }
 
       if (data?.success) {
-        console.log('Sign up successful:', data);
+        console.log('Enhanced sign up successful:', data);
         setSignupStatus('sending-email');
+        setDiagnostic(data.diagnostic);
         
-        // Brief delay for better UX
         setTimeout(() => {
           setSignupStatus('success');
           setEmailSent(data.emailSent || false);
           
-          // Transition to OTP verification
           setTimeout(() => {
             setCurrentView('otp-verification');
           }, 1000);
         }, 1000);
       } else {
-        console.error('Unexpected response:', data);
+        console.error('Enhanced unexpected response:', data);
         setSignupStatus('error');
         setError('Sign up failed. Please try again.');
+        setCanRetry(true);
       }
       
     } catch (error) {
-      console.error('Sign up exception:', error);
+      console.error('Enhanced sign up exception:', error);
       setSignupStatus('error');
       setError('An unexpected error occurred. Please try again.');
+      setCanRetry(true);
     }
+  };
+
+  const handleRetry = async () => {
+    console.log('Enhanced: Retrying signup for:', formData.email);
+    await handleSubmit({ preventDefault: () => {} } as React.FormEvent);
   };
 
   if (currentView === 'otp-verification') {
@@ -147,7 +165,7 @@ export function ClientSignUpForm() {
         email={formData.email}
         password={formData.password}
         onSuccess={() => {
-          console.log('OTP verification successful');
+          console.log('Enhanced OTP verification successful');
         }}
         onBack={() => setCurrentView('signup-form')}
       />
@@ -176,9 +194,35 @@ export function ClientSignUpForm() {
             <div className="flex-1">
               <p className="text-sm text-destructive font-medium">Error</p>
               <p className="text-sm text-destructive mt-1">{error}</p>
+              {canRetry && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="mt-2 text-destructive border-destructive/20 hover:bg-destructive/5"
+                  onClick={handleRetry}
+                  disabled={signupStatus === 'creating' || signupStatus === 'sending-email'}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Try Again
+                </Button>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {diagnostic && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-xs">
+            <details className="cursor-pointer">
+              <summary className="font-medium text-sm mb-2">Diagnostic Information</summary>
+              <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-32">
+                {JSON.stringify(diagnostic, null, 2)}
+              </pre>
+            </details>
+          </AlertDescription>
+        </Alert>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">

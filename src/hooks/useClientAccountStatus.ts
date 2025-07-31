@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface AccountStatus {
   isClient: boolean;
@@ -19,55 +20,46 @@ export function useClientAccountStatus() {
     setStatus(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const { data: isClient, error } = await supabase.rpc('is_client_account', {
-        user_id_param: userId
-      });
-
-      if (error) {
-        console.error('Error checking client account status:', error);
-        setStatus(prev => ({ ...prev, isLoading: false, error: error.message }));
-        return false;
-      }
-
-      const isClientAccount = Boolean(isClient);
+      console.log('Checking client account status for user:', userId);
+      
+      const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
+      
       setStatus({
-        isClient: isClientAccount,
+        isClient,
         isLoading: false,
         error: null,
       });
 
-      return isClientAccount;
+      return isClient;
     } catch (error) {
       console.error('Exception checking client account status:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setStatus(prev => ({ 
         ...prev, 
         isLoading: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+        error: errorMessage
       }));
       return false;
     }
   }, []);
 
   const ensureClientAccount = useCallback(async (userId: string, userMetadata: any): Promise<boolean> => {
-    console.log('Ensuring client account exists for user:', userId);
-    
-    try {
-      const { data: result, error } = await supabase.rpc('ensure_client_account', {
-        user_id_param: userId,
-        company_name_param: userMetadata?.companyName || 'My Company',
-        first_name_param: userMetadata?.contactFirstName || 
-          userMetadata?.full_name?.split(' ')[0] || '',
-        last_name_param: userMetadata?.contactLastName || 
-          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
-      });
+    console.log('Ensuring client account exists for user:', userId, userMetadata);
 
-      if (error) {
-        console.error('Error ensuring client account:', error);
+    try {
+      // Get user email from auth
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || user.id !== userId) {
+        console.error('User not found or ID mismatch');
         return false;
       }
 
-      if (result?.success && result?.is_client) {
-        console.log('Client account ensured successfully');
+      // Use simplified client record creation
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata);
+      
+      if (result.success) {
+        console.log('Client record ensured successfully:', result);
         return await checkAccountStatus(userId);
       }
 
