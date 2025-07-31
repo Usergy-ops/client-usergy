@@ -117,7 +117,7 @@ export function TestConnection() {
     setIsRepairing(true);
     try {
       console.log('Performing account repair with cleaned up system...');
-      const repairSuccess = await repairAccount(user.id, user.user_metadata);
+      const repairSuccess = await repairAccount(user.id);
       
       if (repairSuccess) {
         setDiagnosticInfo({ message: 'Account repair successful with cleaned up system' });

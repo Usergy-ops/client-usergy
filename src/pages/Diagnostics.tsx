@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
@@ -56,7 +55,7 @@ export default function Diagnostics() {
     
     setIsLoading(true);
     try {
-      const success = await repairAccount(user.id, user.user_metadata);
+      const success = await repairAccount(user.id);
       if (success) {
         // Reload diagnostics after successful repair
         await loadInitialDiagnostics();
