@@ -538,6 +538,23 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      save_complete_client_profile: {
+        Args: {
+          user_id_param: string
+          company_name_param: string
+          full_name_param: string
+          company_website_param?: string
+          industry_param?: string
+          company_size_param?: string
+          contact_role_param?: string
+          contact_phone_param?: string
+          company_country_param?: string
+          company_city_param?: string
+          company_timezone_param?: string
+          company_logo_url_param?: string
+        }
+        Returns: Json
+      }
       validate_password_requirements: {
         Args: { password_hash: string }
         Returns: boolean

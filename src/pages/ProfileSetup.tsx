@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -123,23 +124,28 @@ export default function ProfileSetup() {
   };
 
   const uploadLogo = async (file: File): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user?.id}/logo.${fileExt}`;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user?.id}/logo.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('profile-pictures')
-      .upload(fileName, file, { upsert: true });
+      const { error: uploadError } = await supabase.storage
+        .from('profile-pictures')
+        .upload(fileName, file, { upsert: true });
 
-    if (uploadError) {
-      console.error('Logo upload error:', uploadError);
+      if (uploadError) {
+        console.error('Logo upload error:', uploadError);
+        return null;
+      }
+
+      const { data } = supabase.storage
+        .from('profile-pictures')
+        .getPublicUrl(fileName);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Logo upload exception:', error);
       return null;
     }
-
-    const { data } = supabase.storage
-      .from('profile-pictures')
-      .getPublicUrl(fileName);
-
-    return data.publicUrl;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -162,42 +168,48 @@ export default function ProfileSetup() {
         logoUrl = await uploadLogo(formData.companyLogo);
       }
 
-      // Create the enhanced client profile with metadata
-      const profileData = {
+      console.log('Saving complete client profile with data:', {
+        user_id: user?.id,
+        company_name: formData.companyName,
+        full_name: formData.fullName,
+        company_website: formData.websiteUrl || null,
+        industry: formData.industry,
+        company_size: formData.companySize,
+        contact_role: formData.contactRole,
+        contact_phone: formData.contactPhone || null,
+        company_country: formData.companyCountry,
+        company_city: formData.companyCity,
+        company_timezone: formData.companyTimezone,
+        company_logo_url: logoUrl
+      });
+
+      // Use the new save_complete_client_profile function
+      const { data, error } = await supabase.rpc('save_complete_client_profile', {
         user_id_param: user?.id,
         company_name_param: formData.companyName,
-        first_name_param: formData.fullName.split(' ')[0] || '',
-        last_name_param: formData.fullName.split(' ').slice(1).join(' ') || '',
-        metadata_param: {
-          company_website: formData.websiteUrl || null,
-          industry: formData.industry,
-          company_size: formData.companySize,
-          contact_role: formData.contactRole,
-          contact_phone: formData.contactPhone || null,
-          company_country: formData.companyCountry,
-          company_city: formData.companyCity,
-          company_timezone: formData.companyTimezone,
-          company_logo_url: logoUrl,
-          onboarding_status: 'completed'
-        }
-      };
-
-      console.log('Creating enhanced client profile with data:', profileData);
-
-      // Use ensure_client_account_robust for robust profile creation
-      const { data, error } = await supabase.rpc('ensure_client_account_robust', {
-        user_id_param: user?.id,
-        company_name_param: formData.companyName,
-        first_name_param: formData.fullName.split(' ')[0] || '',
-        last_name_param: formData.fullName.split(' ').slice(1).join(' ') || ''
+        full_name_param: formData.fullName,
+        company_website_param: formData.websiteUrl || null,
+        industry_param: formData.industry,
+        company_size_param: formData.companySize,
+        contact_role_param: formData.contactRole,
+        contact_phone_param: formData.contactPhone || null,
+        company_country_param: formData.companyCountry,
+        company_city_param: formData.companyCity,
+        company_timezone_param: formData.companyTimezone,
+        company_logo_url_param: logoUrl
       });
 
       if (error) {
-        console.error('Error creating client account:', error);
+        console.error('Error saving client profile:', error);
         throw error;
       }
 
-      console.log('Client account created successfully:', data);
+      if (data && !data.success) {
+        console.error('Profile save failed:', data.error);
+        throw new Error(data.error || 'Failed to save profile');
+      }
+
+      console.log('Client profile saved successfully:', data);
 
       // Navigate to dashboard
       navigate('/dashboard');
