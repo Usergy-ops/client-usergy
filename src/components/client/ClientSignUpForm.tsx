@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -75,28 +76,24 @@ export function ClientSignUpForm() {
     setError('');
 
     try {
-      console.log('Starting client sign up process...');
+      console.log('Starting client sign up process via edge function...');
       
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-          data: {
-            account_type: 'client',
-            accountType: 'client',
-            companyName: formData.companyName,
-            contactFirstName: formData.contactFirstName,
-            contactLastName: formData.contactLastName,
-            full_name: `${formData.contactFirstName} ${formData.contactLastName}`.trim()
-          }
+      // Use the custom edge function instead of direct Supabase auth
+      const { data, error: signUpError } = await supabase.functions.invoke('client-auth-handler/signup', {
+        body: {
+          email: formData.email,
+          password: formData.password,
+          companyName: formData.companyName,
+          firstName: formData.contactFirstName,
+          lastName: formData.contactLastName,
         }
       });
 
       if (signUpError) {
-        if (signUpError.message.includes('already registered')) {
+        console.error('Edge function signup error:', signUpError);
+        if (signUpError.message?.includes('already exists') || signUpError.message?.includes('already registered')) {
           setError('An account with this email already exists. Please sign in instead.');
-        } else if (signUpError.message.includes('Password')) {
+        } else if (signUpError.message?.includes('Password')) {
           setError('Password must be at least 8 characters long and contain both letters and numbers.');
         } else {
           setError(`Sign up failed: ${signUpError.message}`);
@@ -104,12 +101,31 @@ export function ClientSignUpForm() {
         return;
       }
 
-      console.log('Sign up successful, showing OTP verification');
-      setCurrentView('otp-verification');
+      if (data?.error) {
+        console.error('Edge function returned error:', data.error);
+        if (data.error.includes('already exists')) {
+          setError('An account with this email already exists. Please sign in instead.');
+        } else {
+          setError(`Sign up failed: ${data.error}`);
+        }
+        return;
+      }
+
+      if (data?.success) {
+        console.log('Sign up successful via edge function, showing OTP verification');
+        setCurrentView('otp-verification');
+      } else {
+        console.error('Unexpected response from edge function:', data);
+        setError('Sign up failed. Please try again.');
+      }
       
     } catch (error) {
       console.error('Sign up error:', error);
-      setError('An unexpected error occurred. Please try again.');
+      if (error instanceof Error) {
+        setError(`Sign up failed: ${error.message}`);
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }

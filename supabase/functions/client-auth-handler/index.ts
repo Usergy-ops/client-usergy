@@ -9,10 +9,10 @@ const corsHeaders = {
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const resendApiKey = Deno.env.get('RESEND_API_KEY')!;
+const resendApiKey = Deno.env.get('RESEND_API_KEY');
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
-const resend = new Resend(resendApiKey);
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
 // Helper to log errors to the database
 const logError = async (error: any, context: string, metadata: any = {}) => {
@@ -57,6 +57,8 @@ const handler = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname.split('/').pop();
 
+    console.log(`Edge function called with path: ${path}`);
+
     switch (path) {
       case 'signup':
         return await handleClientSignup(req);
@@ -65,6 +67,7 @@ const handler = async (req: Request): Promise<Response> => {
       case 'resend-otp':
         return await handleResendOTP(req);
       default:
+        console.error(`Invalid endpoint: ${path}`);
         return new Response(JSON.stringify({ error: 'Invalid endpoint' }), {
           status: 404,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -88,37 +91,58 @@ async function handleClientSignup(req: Request): Promise<Response> {
   try {
     console.log(`Starting signup for: ${email}`);
     
+    // Check if user already exists
     const { data: existingUsers, error: userCheckError } = await supabase.auth.admin.listUsers({ email });
 
     if (userCheckError) {
+      console.error('Error checking existing users:', userCheckError);
       await logError(userCheckError, 'handleClientSignup-userCheck', { email });
-      return new Response(JSON.stringify({ error: 'Failed to check user existence.' }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Failed to check user existence.' }), { 
+        status: 500, 
+        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+      });
     }
 
     if (existingUsers.users.length > 0) {
-      return new Response(JSON.stringify({ error: 'User with this email already exists' }), { status: 400, headers: corsHeaders });
+      console.log(`User already exists: ${email}`);
+      return new Response(JSON.stringify({ error: 'User with this email already exists' }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+      });
     }
 
+    // Generate OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+    console.log(`Generated OTP: ${otpCode} for ${email}`);
+
+    // Create user with email_confirm: false (unconfirmed initially)
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
-      email_confirm: false,
+      email_confirm: false, // User starts unconfirmed
       user_metadata: {
         account_type: 'client',
         companyName,
         contactFirstName: firstName,
         contactLastName: lastName,
+        full_name: `${firstName} ${lastName}`.trim()
       }
     });
 
     if (authError) {
+      console.error('Error creating user:', authError);
       await logError(authError, 'handleClientSignup-createUser', { email });
-      return new Response(JSON.stringify({ error: 'Failed to create account.' }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Failed to create account.' }), { 
+        status: 400, 
+        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+      });
     }
 
+    console.log(`User created successfully: ${authData.user.id}`);
+
+    // Store OTP for verification
     const { error: otpError } = await supabase.from('user_otp_verification').insert({
       email,
       otp_code: otpCode,
@@ -126,18 +150,48 @@ async function handleClientSignup(req: Request): Promise<Response> {
     });
 
     if (otpError) {
+      console.error('Error storing OTP:', otpError);
       await logError(otpError, 'handleClientSignup-storeOTP', { email });
-      return new Response(JSON.stringify({ error: 'Failed to generate verification code' }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Failed to generate verification code' }), { 
+        status: 500, 
+        headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+      });
     }
 
-    sendOTPEmail(email, otpCode, firstName).catch(e => logError(e, 'handleClientSignup-sendEmail', { email }));
+    // Send OTP email (async, don't block response)
+    if (resend) {
+      sendOTPEmail(email, otpCode, firstName)
+        .then(() => console.log(`OTP email sent successfully to ${email}`))
+        .catch(error => {
+          console.error(`Failed to send OTP email to ${email}:`, error);
+          logError(error, 'handleClientSignup-sendEmail', { email });
+        });
+    } else {
+      console.warn('RESEND_API_KEY not configured, email will not be sent');
+      await logError(
+        new Error('RESEND_API_KEY not configured'), 
+        'handleClientSignup-emailConfig', 
+        { email }
+      );
+    }
 
     console.log(`Signup successful for: ${email}`);
-    return new Response(JSON.stringify({ success: true, userId: authData.user.id }), { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ 
+      success: true, 
+      userId: authData.user.id,
+      message: 'Account created successfully. Please check your email for the verification code.' 
+    }), { 
+      status: 200, 
+      headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+    });
 
   } catch (error: any) {
+    console.error('Unexpected signup error:', error);
     await logError(error, 'handleClientSignup-catchAll', { email });
-    return new Response(JSON.stringify({ error: 'An unexpected error occurred.' }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: 'An unexpected error occurred.' }), { 
+      status: 500, 
+      headers: { 'Content-Type': 'application/json', ...corsHeaders } 
+    });
   }
 }
 
@@ -263,6 +317,10 @@ async function handleResendOTP(req: Request): Promise<Response> {
 }
 
 async function sendOTPEmail(email: string, otpCode: string, firstName: string, isResend = false): Promise<void> {
+  if (!resend) {
+    throw new Error('Resend not configured');
+  }
+
   const subject = isResend ? 'New Verification Code - Usergy Client Portal' : 'Welcome to Usergy - Verify Your Email';
   const title = isResend ? 'New Verification Code' : 'Welcome to Usergy';
   const subtitle = isResend ? 'New Verification Code' : 'Email Verification Required';
