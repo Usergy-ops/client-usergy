@@ -39,15 +39,15 @@ export function useEnhancedClientAccountCreation() {
     try {
       console.log('Enhanced: Creating client account for user:', userId, userMetadata);
       
-      // Use simplified approach - just ensure account type
+      // Use simplified approach - just ensure client record exists
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user || user.id !== userId) {
         throw new Error('User not found or authentication mismatch');
       }
 
-      // Use simplified diagnostics
-      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
+      // Use simplified diagnostics to ensure client record
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata);
       
       if (result.success) {
         // Verify client status
@@ -71,7 +71,7 @@ export function useEnhancedClientAccountCreation() {
             }
           };
         } else {
-          throw new Error('Account type assigned but client verification failed');
+          throw new Error('Client record created but verification failed');
         }
       } else {
         const errorMessage = result.error || 'Enhanced account creation failed';

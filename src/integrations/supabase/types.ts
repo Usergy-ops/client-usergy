@@ -488,6 +488,15 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      ensure_client_account_robust: {
+        Args: {
+          user_id_param: string
+          company_name_param?: string
+          first_name_param?: string
+          last_name_param?: string
+        }
+        Returns: Json
+      }
       ensure_profile_exists: {
         Args: { user_uuid: string; user_email: string; user_full_name?: string }
         Returns: boolean
@@ -503,6 +512,10 @@ export type Database = {
       get_user_account_type: {
         Args: { user_id_param?: string }
         Returns: string
+      }
+      is_client_account: {
+        Args: { user_id_param?: string }
+        Returns: boolean
       }
       is_user_account: {
         Args: { user_id_param?: string }

@@ -65,28 +65,17 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Testing RLS policies for user: ${userId}`);
       
-      // Test basic client_workflow.clients access
-      const { data: clients, error: clientError } = await supabase
-        .from('client_workflow.clients')
-        .select('*')
-        .eq('auth_user_id', userId);
-
-      if (clientError) {
-        console.error('Client workflow RLS test failed:', clientError);
-        return {
-          success: false,
-          error: clientError.message,
-          timestamp
-        };
-      }
+      // Test RPC function access
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('is_client_account', { user_id_param: userId });
 
       const results = [
         {
-          table_name: 'client_workflow.clients',
-          operation: 'SELECT',
-          can_access: !clientError,
-          error_message: clientError?.message || null,
-          record_count: clients?.length || 0
+          function_name: 'is_client_account',
+          operation: 'RPC CALL',
+          can_access: !rpcError,
+          error_message: rpcError?.message || null,
+          result: rpcResult
         }
       ];
 
@@ -207,22 +196,18 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      // Check if the user has the expected client record
-      const { data: clientRecord } = await supabase
-        .from('client_workflow.clients')
-        .select('*')
-        .eq('auth_user_id', user.id)
-        .single();
+      // Check if the user has the expected client record using RPC
+      const { data: isClient } = await supabase
+        .rpc('is_client_account', { user_id_param: user.id });
 
       return {
         success: true,
         data: {
           user_id: user.id,
           email: user.email,
-          has_client_record: !!clientRecord,
-          client_record: clientRecord,
+          has_client_record: !!isClient,
           simplified_mode: true,
-          setup_working: !!clientRecord
+          setup_working: !!isClient
         },
         timestamp
       };

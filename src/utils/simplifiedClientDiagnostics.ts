@@ -26,29 +26,27 @@ export class SimplifiedClientDiagnostics {
     try {
       console.log(`Checking simplified user account status for: ${userId}`);
       
-      // Check if user exists in client_workflow.clients
+      // Use RPC call to check if user is a client account
+      const { data: isClient, error: rpcError } = await supabase
+        .rpc('is_client_account', { user_id_param: userId });
+
+      if (rpcError) {
+        console.error('RPC error checking client account:', rpcError);
+      }
+
+      // Also try direct query as fallback
       const { data: clientRecord, error: clientError } = await supabase
         .from('client_workflow.clients')
         .select('*')
         .eq('auth_user_id', userId)
         .single();
 
-      if (clientError && clientError.code !== 'PGRST116') {
-        console.error('Error checking client record:', clientError);
-        return {
-          success: false,
-          error: clientError.message,
-          timestamp,
-          source: 'client_record_check'
-        };
-      }
-
       // Get current session info
       const { data: { session } } = await supabase.auth.getSession();
       
       const status: UserAccountStatus = {
         userExists: !!session?.user,
-        hasClientRecord: !!clientRecord,
+        hasClientRecord: !clientError && !!clientRecord,
         clientRecord: clientRecord || null,
         isAuthenticated: !!session?.user && session.user.id === userId,
         sessionValid: !!session && (!session.expires_at || session.expires_at > Date.now() / 1000),
@@ -94,13 +92,23 @@ export class SimplifiedClientDiagnostics {
     try {
       console.log(`Checking if user has client record: ${userId}`);
       
+      // First try RPC call
+      const { data: rpcResult, error: rpcError } = await supabase
+        .rpc('is_client_account', { user_id_param: userId });
+
+      if (!rpcError && typeof rpcResult === 'boolean') {
+        console.log(`RPC result for user ${userId}: ${rpcResult}`);
+        return rpcResult;
+      }
+
+      // Fallback to direct query if RPC fails
       const { data: clientRecord, error } = await supabase
         .from('client_workflow.clients')
         .select('id')
         .eq('auth_user_id', userId)
         .single();
 
-      if (error) {
+      if (error && error.code !== 'PGRST116') {
         console.error('Error checking client record status:', error);
         return false;
       }
@@ -121,33 +129,45 @@ export class SimplifiedClientDiagnostics {
     try {
       console.log(`Ensuring client record for user: ${userId} (${userEmail})`);
       
-      // Check if client record already exists
-      const { data: existingRecord } = await supabase
-        .from('client_workflow.clients')
-        .select('*')
-        .eq('auth_user_id', userId)
-        .single();
+      // Use the database function to ensure client record
+      const { data: functionResult, error: functionError } = await supabase
+        .rpc('ensure_client_account_robust', {
+          user_id_param: userId,
+          company_name_param: additionalData.companyName || additionalData.company_name || 'My Company',
+          first_name_param: additionalData.contactFirstName || additionalData.first_name || additionalData.firstName || '',
+          last_name_param: additionalData.contactLastName || additionalData.last_name || additionalData.lastName || ''
+        });
 
-      if (existingRecord) {
-        console.log(`Client record already exists:`, existingRecord);
+      if (functionError) {
+        console.error('Function error ensuring client record:', functionError);
         return {
-          success: true,
-          data: { 
-            client_record: existingRecord,
-            action: 'already_exists'
-          },
+          success: false,
+          error: functionError.message,
           timestamp,
-          source: 'client_record_exists'
+          source: 'function_error'
         };
       }
 
-      // Create new client record
+      if (functionResult && functionResult.success) {
+        console.log('Client record ensured successfully via function:', functionResult);
+        return {
+          success: true,
+          data: {
+            client_record: functionResult,
+            action: 'function_ensured'
+          },
+          timestamp,
+          source: 'function_success'
+        };
+      }
+
+      // If function didn't work, try direct insert as fallback
       const clientData = {
         auth_user_id: userId,
         email: userEmail,
         full_name: additionalData.full_name || additionalData.firstName && additionalData.lastName ? 
           `${additionalData.firstName} ${additionalData.lastName}` : null,
-        company_name: additionalData.companyName || additionalData.company_name || null,
+        company_name: additionalData.companyName || additionalData.company_name || 'My Company',
         company_url: additionalData.company_url || null,
         role: additionalData.role || null,
         country: additionalData.country || null
@@ -160,24 +180,24 @@ export class SimplifiedClientDiagnostics {
         .single();
 
       if (insertError) {
-        console.error('Error creating client record:', insertError);
+        console.error('Error creating client record via direct insert:', insertError);
         return {
           success: false,
           error: insertError.message,
           timestamp,
-          source: 'client_record_creation_failed'
+          source: 'direct_insert_failed'
         };
       }
 
-      console.log('Client record created successfully:', newRecord);
+      console.log('Client record created successfully via direct insert:', newRecord);
       return {
         success: true,
         data: {
           client_record: newRecord,
-          action: 'created'
+          action: 'direct_created'
         },
         timestamp,
-        source: 'client_record_created'
+        source: 'direct_insert_success'
       };
 
     } catch (error) {

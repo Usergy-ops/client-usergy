@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useState,
@@ -21,6 +22,12 @@ interface ClientAuthContextType {
   setIsClientAccount: (isClient: boolean) => void;
   waitForClientAccount: (userId: string, maxRetries?: number) => Promise<boolean>;
   diagnoseAccount: (userId: string) => Promise<any | null>;
+  signIn: (email: string, password: string) => Promise<{ error?: any }>;
+  signInWithGoogle: () => Promise<{ error?: any }>;
+  signOut: () => Promise<void>;
+  getAccountHealth: (userId: string) => Promise<any>;
+  repairAccount: (userId: string) => Promise<any>;
+  refreshSession: () => Promise<void>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(
@@ -96,7 +103,80 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       isMounted = false;
       subscription.unsubscribe();
     };
+  }, [logError]);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        console.error('Sign in error:', error);
+        return { error };
+      }
+
+      return { error: null };
+    } catch (error) {
+      console.error('Sign in exception:', error);
+      return { error };
+    }
   }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    try {
+      const redirectUrl = `${window.location.origin}/`;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+        },
+      });
+
+      if (error) {
+        console.error('Google sign in error:', error);
+        return { error };
+      }
+
+      return { error: null };
+    } catch (error) {
+      console.error('Google sign in exception:', error);
+      return { error };
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
+      setIsClientAccount(false);
+      
+      toast({
+        title: "Signed out",
+        description: "You have been successfully signed out.",
+      });
+    } catch (error) {
+      console.error('Sign out error:', error);
+      await logError('sign_out_error', error);
+    }
+  }, [toast, logError]);
+
+  const refreshSession = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error('Session refresh error:', error);
+      } else if (data.session) {
+        setSession(data.session);
+        setUser(data.session.user);
+      }
+    } catch (error) {
+      console.error('Session refresh exception:', error);
+      await logError('session_refresh_error', error);
+    }
+  }, [logError]);
 
   const waitForClientAccount = useCallback(
     async (userId: string, maxRetries: number = 10): Promise<boolean> => {
@@ -152,6 +232,36 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logError]);
 
+  const getAccountHealth = useCallback(async (userId: string) => {
+    try {
+      console.log('ClientAuth: Getting account health for:', userId);
+      const result = await SimplifiedClientDiagnostics.checkUserAccountStatus(userId);
+      return result;
+    } catch (error) {
+      console.error('ClientAuth: Account health check error:', error);
+      await logError('account_health_error', error, userId);
+      return null;
+    }
+  }, [logError]);
+
+  const repairAccount = useCallback(async (userId: string) => {
+    try {
+      console.log('ClientAuth: Repairing account for:', userId);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || user.id !== userId) {
+        return { success: false, error: 'User not found or not authenticated' };
+      }
+
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, {});
+      return result;
+    } catch (error) {
+      console.error('ClientAuth: Account repair error:', error);
+      await logError('account_repair_error', error, userId);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }, [logError]);
+
   const value: ClientAuthContextType = {
     user,
     session,
@@ -162,6 +272,12 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     setIsClientAccount,
     waitForClientAccount,
     diagnoseAccount,
+    signIn,
+    signInWithGoogle,
+    signOut,
+    getAccountHealth,
+    repairAccount,
+    refreshSession,
   };
 
   return (

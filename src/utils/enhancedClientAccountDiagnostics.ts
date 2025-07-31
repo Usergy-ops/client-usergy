@@ -92,21 +92,18 @@ export class EnhancedClientAccountDiagnostics {
         };
       }
 
-      // Check for client records in the new schema
+      // Test RPC function access
       try {
-        const { data: clientRecords, error: clientError } = await supabase
-          .from('client_workflow.clients')
-          .select('*');
+        const { data: rpcTest, error: rpcError } = await supabase
+          .rpc('is_client_account', { user_id_param: user?.id || '00000000-0000-0000-0000-000000000000' });
 
-        if (clientError) {
-          diagnostic.checks.client_records = { error: clientError.message };
-        } else {
-          diagnostic.checks.client_records = {
-            total_client_records: clientRecords?.length || 0
-          };
-        }
+        diagnostic.checks.rpc_function = {
+          accessible: !rpcError,
+          error: rpcError?.message || null,
+          result: rpcTest
+        };
       } catch (error) {
-        diagnostic.checks.client_records = { error: error instanceof Error ? error.message : 'Unknown error' };
+        diagnostic.checks.rpc_function = { error: error instanceof Error ? error.message : 'Unknown error' };
       }
 
       return {
@@ -133,27 +130,25 @@ export class EnhancedClientAccountDiagnostics {
     try {
       console.log('Testing enhanced edge function health...');
       
-      // Test basic connectivity to the new client_workflow schema
+      // Test RPC function connectivity
       const { data: testResult, error } = await supabase
-        .from('client_workflow.clients')
-        .select('id')
-        .limit(1);
+        .rpc('is_client_account', { user_id_param: '00000000-0000-0000-0000-000000000000' });
 
       if (error) {
         return {
           success: false,
-          error: `Client workflow connectivity test failed: ${error.message}`,
+          error: `RPC function connectivity test failed: ${error.message}`,
           timestamp,
-          source: 'connectivity_test_failed'
+          source: 'rpc_connectivity_test_failed'
         };
       }
 
       return {
         success: true,
         data: {
-          client_workflow_accessible: true,
+          rpc_function_accessible: true,
           simplified_mode: true,
-          message: 'Using simplified client diagnostics with client_workflow schema'
+          message: 'Using simplified client diagnostics with RPC functions'
         },
         timestamp,
         source: 'simplified_health_check'
