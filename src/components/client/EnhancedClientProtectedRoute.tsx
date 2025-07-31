@@ -28,10 +28,10 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
           .eq('auth_user_id', user.id)
           .single();
 
-        if (error) {
+        if (error && error.code !== 'PGRST116') {
           console.error('Error checking profile completion:', error);
           setIsProfileComplete(false);
-        } else {
+        } else if (profile) {
           // Check if all required fields are completed
           const requiredFields = [
             'company_name',
@@ -48,10 +48,14 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
             profile[field as keyof typeof profile] !== ''
           ) && profile?.onboarding_status === 'completed';
           
+          console.log('Profile completion check:', { profile, isComplete });
           setIsProfileComplete(isComplete);
+        } else {
+          // No profile found
+          setIsProfileComplete(false);
         }
       } catch (error) {
-        console.error('Error in profile completion check:', error);
+        console.error('Exception in profile completion check:', error);
         setIsProfileComplete(false);
       } finally {
         setCheckingProfile(false);
@@ -65,7 +69,7 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
     }
   }, [user, isClientAccount, loading]);
 
-  // Enhanced loading state with better UX
+  // Enhanced loading state
   if (loading || checkingProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">

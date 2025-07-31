@@ -488,6 +488,15 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      ensure_client_account: {
+        Args: {
+          user_id_param: string
+          company_name_param?: string
+          first_name_param?: string
+          last_name_param?: string
+        }
+        Returns: Json
+      }
       ensure_client_account_robust: {
         Args: {
           user_id_param: string

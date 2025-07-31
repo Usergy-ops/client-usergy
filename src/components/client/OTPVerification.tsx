@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,7 +26,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
   const [resendCooldown, setResendCooldown] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { setSession, waitForClientAccount } = useClientAuth();
+  const { waitForClientAccount } = useClientAuth();
   const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
@@ -42,57 +43,33 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!otpCode || otpCode.length !== 6 || !password) {
+    if (!otpCode || otpCode.length !== 6) {
       return;
     }
 
     setVerificationStatus('verifying');
-    reset(); // Clear any previous errors
+    reset();
     
     try {
-      console.log('Starting OTP verification process...');
-      const result = await verifyOTP(email, otpCode, password);
+      console.log('Starting simplified OTP verification process...');
+      const result = await verifyOTP(email, otpCode, password || '');
 
-      if (result.success && result.data?.session) {
-        console.log('OTP verification successful, processing session...');
+      if (result.success) {
+        console.log('OTP verification successful');
         setVerificationStatus('success');
         
         toast({
           title: "Email verified successfully!",
-          description: "Setting up your account...",
+          description: "Welcome to Usergy! Redirecting to your dashboard...",
         });
 
-        // Set the session in the auth context
-        if (result.data.session.session) {
-          setSession(result.data.session.session);
-        }
-
-        // Wait for client account creation (database trigger should handle this)
-        console.log('Waiting for client account creation...');
-        const isClient = await waitForClientAccount(result.data.userId, 15);
+        // The backend trigger automatically creates client account
+        // Just wait a moment and navigate
+        setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+          onSuccess();
+        }, 1500);
         
-        if (isClient) {
-          console.log('Client account confirmed, navigating to dashboard...');
-          toast({
-            title: "Welcome to Usergy!",
-            description: "Your account is ready. Redirecting to dashboard...",
-          });
-          
-          // Small delay for better UX
-          setTimeout(() => {
-            navigate('/dashboard', { replace: true });
-          }, 1000);
-        } else {
-          console.warn('Client account not confirmed, navigating to profile setup...');
-          toast({
-            title: "Account setup incomplete",
-            description: "Please complete your profile setup.",
-            variant: "destructive"
-          });
-          navigate('/profile', { replace: true });
-        }
-        
-        onSuccess();
       } else {
         console.error('OTP verification failed:', result.error);
         setVerificationStatus('error');
@@ -121,17 +98,16 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
 
       if (result.success) {
         setResendStatus('sent');
-        setResendCooldown(60); // 60 second cooldown
+        setResendCooldown(60);
         
         toast({
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
         });
         
-        setOtpCode(''); // Clear current code
-        reset(); // Clear any errors
+        setOtpCode('');
+        reset();
         
-        // Reset resend status after a delay
         setTimeout(() => {
           setResendStatus('idle');
         }, 3000);
@@ -151,7 +127,6 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
           email
         );
         
-        // Reset error status after delay
         setTimeout(() => {
           setResendStatus('idle');
         }, 3000);
@@ -201,7 +176,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
       {verificationStatus === 'success' && (
         <AuthStatusIndicator 
           status="success" 
-          message="Email verified! Setting up your account..."
+          message="Email verified! Welcome to Usergy!"
         />
       )}
 
@@ -261,7 +236,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
               <span>Verified!</span>
             </div>
           ) : (
-            'Verify Email'
+            'Verify & Continue'
           )}
         </Button>
       </form>

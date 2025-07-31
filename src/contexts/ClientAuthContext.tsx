@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useState,
@@ -23,9 +24,7 @@ interface ClientAuthContextType {
   setSession: (session: Session | null) => void;
   refreshSession: () => Promise<void>;
   waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
-  diagnoseAccount: (userId: string) => Promise<any>;
-  repairAccount: (userId: string) => Promise<boolean>;
-  getAccountHealth: (userId: string) => Promise<any>;
+  checkIsClientAccount: (userId: string) => Promise<boolean>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(
@@ -39,17 +38,41 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const [isClientAccount, setIsClientAccount] = useState(false);
   const { toast } = useToast();
 
-  // Simple session check
-  const checkClientAccount = useCallback(async (userId: string) => {
+  // Enhanced client account check - works with new backend logic
+  const checkIsClientAccount = useCallback(async (userId: string): Promise<boolean> => {
     try {
-      const { data } = await supabase
+      console.log('Checking client account status for user:', userId);
+      
+      // Check account_types table first
+      const { data: accountType } = await supabase
         .from('account_types')
         .select('account_type')
         .eq('auth_user_id', userId)
         .single();
       
-      return data?.account_type === 'client';
-    } catch {
+      if (accountType?.account_type === 'client') {
+        console.log('User confirmed as client account type');
+        return true;
+      }
+      
+      // If no account type found, the trigger should have created it
+      // Let's wait a moment and check again
+      if (!accountType) {
+        console.log('No account type found, waiting for trigger to process...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const { data: retryAccountType } = await supabase
+          .from('account_types')
+          .select('account_type')
+          .eq('auth_user_id', userId)
+          .single();
+          
+        return retryAccountType?.account_type === 'client';
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error checking client account status:', error);
       return false;
     }
   }, []);
@@ -62,7 +85,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       setUser(session?.user || null);
       
       if (session?.user) {
-        const isClient = await checkClientAccount(session.user.id);
+        const isClient = await checkIsClientAccount(session.user.id);
         setIsClientAccount(isClient);
       } else {
         setIsClientAccount(false);
@@ -70,62 +93,26 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     } catch (error) {
       console.error('Session refresh error:', error);
     }
-  }, [checkClientAccount]);
+  }, [checkIsClientAccount]);
 
-  // Wait for client account creation
-  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10) => {
+  // Wait for client account creation - simplified since backend handles it
+  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10): Promise<boolean> => {
+    console.log('Waiting for client account creation for user:', userId);
+    
     for (let i = 0; i < maxAttempts; i++) {
-      const isClient = await checkClientAccount(userId);
-      if (isClient) return true;
+      const isClient = await checkIsClientAccount(userId);
+      if (isClient) {
+        console.log(`Client account confirmed after ${i + 1} attempts`);
+        return true;
+      }
+      
+      console.log(`Attempt ${i + 1}/${maxAttempts} - waiting...`);
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
+    
+    console.warn('Client account creation timeout after', maxAttempts, 'attempts');
     return false;
-  }, [checkClientAccount]);
-
-  // Diagnose account issues
-  const diagnoseAccount = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase.rpc('diagnose_client_account', {
-        user_id_param: userId
-      });
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error('Account diagnosis error:', error);
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }, []);
-
-  // Get account health
-  const getAccountHealth = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase.rpc('get_account_health', {
-        user_id_param: userId
-      });
-      
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error('Account health check error:', error);
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }, []);
-
-  // Repair account
-  const repairAccount = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase.rpc('repair_client_account', {
-        user_id_param: userId
-      });
-      
-      if (error) throw error;
-      return data?.success || false;
-    } catch (error) {
-      console.error('Account repair error:', error);
-      return false;
-    }
-  }, []);
+  }, [checkIsClientAccount]);
 
   useEffect(() => {
     // Initialize auth state
@@ -136,7 +123,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         setUser(session?.user || null);
         
         if (session?.user) {
-          const isClient = await checkClientAccount(session.user.id);
+          const isClient = await checkIsClientAccount(session.user.id);
           setIsClientAccount(isClient);
         }
       } catch (error) {
@@ -151,11 +138,15 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.id);
+        
         setSession(session);
         setUser(session?.user || null);
         
         if (session?.user) {
-          const isClient = await checkClientAccount(session.user.id);
+          // For new signups, the backend trigger handles account creation
+          // We just need to wait and verify
+          const isClient = await checkIsClientAccount(session.user.id);
           setIsClientAccount(isClient);
         } else {
           setIsClientAccount(false);
@@ -166,54 +157,62 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     );
 
     return () => subscription.unsubscribe();
-  }, [checkClientAccount, loading]);
+  }, [checkIsClientAccount, loading]);
 
-  // Email/Password signup
+  // Email/Password signup - simplified since backend handles account creation
   const signUp = useCallback(async (email: string, password: string) => {
     try {
+      console.log('Starting signup process for:', email);
+      
       const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: { email, password }
       });
 
       if (error) {
+        console.error('Signup edge function error:', error);
         return { success: false, error: 'Signup failed. Please try again.' };
       }
 
       if (data?.success) {
+        console.log('Signup successful, OTP sent');
         return { success: true };
       }
 
       return { success: false, error: data?.error || 'Signup failed' };
     } catch (error) {
-      console.error('Signup error:', error);
+      console.error('Signup exception:', error);
       return { success: false, error: 'Signup failed. Please try again.' };
     }
   }, []);
 
-  // OTP verification
+  // OTP verification - simplified since backend handles session creation
   const verifyOTP = useCallback(async (email: string, otp: string) => {
     try {
+      console.log('Starting OTP verification for:', email);
+      
       const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
         body: { email, otpCode: otp }
       });
 
       if (error) {
+        console.error('OTP verification edge function error:', error);
         return { success: false, error: 'Invalid verification code' };
       }
 
       if (data?.success && data?.session) {
-        // Session is automatically set by the edge function
+        console.log('OTP verification successful, session created');
+        // Session will be automatically set by the auth state change listener
         return { success: true };
       }
 
       return { success: false, error: data?.error || 'Invalid verification code' };
     } catch (error) {
-      console.error('OTP verification error:', error);
+      console.error('OTP verification exception:', error);
       return { success: false, error: 'Verification failed. Please try again.' };
     }
   }, []);
 
-  // Google Auth
+  // Google Auth - simplified
   const signInWithGoogle = useCallback(async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -294,9 +293,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     setSession,
     refreshSession,
     waitForClientAccount,
-    diagnoseAccount,
-    repairAccount,
-    getAccountHealth,
+    checkIsClientAccount,
   };
 
   return (
