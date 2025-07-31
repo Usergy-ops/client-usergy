@@ -9,9 +9,9 @@ const Index = () => {
   const { user, isClientAccount, loading } = useClientAuth();
 
   useEffect(() => {
-    // Auto-redirect authenticated users to dashboard
+    // Auto-redirect authenticated client users to dashboard
     if (!loading && user && isClientAccount) {
-      console.log('Index: Authenticated user detected, redirecting to dashboard');
+      console.log('Index: Authenticated client user detected, redirecting to dashboard');
       navigate('/dashboard', { replace: true });
     }
   }, [user, isClientAccount, loading, navigate]);
