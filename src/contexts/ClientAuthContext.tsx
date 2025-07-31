@@ -10,7 +10,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
-import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
+import { ClientWorkflowDiagnostics } from '@/utils/clientWorkflowDiagnostics';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -57,8 +57,8 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
           setSession(session);
           setUser(session.user);
           
-          // Check if user has client record using simplified approach
-          const hasClientRecord = await SimplifiedClientDiagnostics.isClientAccount(session.user.id);
+          // Check if user has client record using new workflow
+          const hasClientRecord = await ClientWorkflowDiagnostics.isClientAccount(session.user.id);
           console.log('ClientAuth: Client record status:', hasClientRecord);
           setIsClientAccount(hasClientRecord);
         }
@@ -85,8 +85,8 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
           setUser(session?.user || null);
           
           if (session?.user) {
-            // Check client record status with simplified approach
-            const hasClientRecord = await SimplifiedClientDiagnostics.isClientAccount(session.user.id);
+            // Check client record status with new workflow
+            const hasClientRecord = await ClientWorkflowDiagnostics.isClientAccount(session.user.id);
             console.log('ClientAuth: Updated client record status:', hasClientRecord);
             setIsClientAccount(hasClientRecord);
           } else {
@@ -190,7 +190,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
               retries + 1
             }/${maxRetries})`
           );
-          const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
+          const isClient = await ClientWorkflowDiagnostics.isClientAccount(userId);
 
           if (isClient) {
             console.log('ClientAuth: Client account confirmed.');
@@ -204,7 +204,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         } catch (error) {
           console.error('ClientAuth: Error checking client account:', error);
           await logError('client_check_error', error, userId);
-          return false; // Consider returning false on error
+          return false;
         }
       }
 
@@ -222,7 +222,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const diagnoseAccount = useCallback(async (userId: string) => {
     try {
       console.log('ClientAuth: Starting account diagnosis for:', userId);
-      const result = await SimplifiedClientDiagnostics.checkUserAccountStatus(userId);
+      const result = await ClientWorkflowDiagnostics.checkClientStatus(userId);
       console.log('ClientAuth: Diagnosis result:', result);
       return result;
     } catch (error) {
@@ -235,7 +235,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const getAccountHealth = useCallback(async (userId: string) => {
     try {
       console.log('ClientAuth: Getting account health for:', userId);
-      const result = await SimplifiedClientDiagnostics.checkUserAccountStatus(userId);
+      const result = await ClientWorkflowDiagnostics.checkClientStatus(userId);
       return result;
     } catch (error) {
       console.error('ClientAuth: Account health check error:', error);
@@ -253,7 +253,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         return { success: false, error: 'User not found or not authenticated' };
       }
 
-      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, {});
+      const result = await ClientWorkflowDiagnostics.ensureClientRecord(userId, user.email!, {});
       return result;
     } catch (error) {
       console.error('ClientAuth: Account repair error:', error);
