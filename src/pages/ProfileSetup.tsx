@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -162,7 +163,8 @@ export default function ProfileSetup() {
 
       const { error } = await supabase
         .from('client_workspace.company_profiles')
-        .update({
+        .upsert({
+          auth_user_id: user?.id,
           company_name: formData.companyName,
           company_website: formData.websiteUrl || null,
           industry: formData.industry,
@@ -174,8 +176,7 @@ export default function ProfileSetup() {
           company_timezone: formData.companyTimezone,
           company_logo_url: logoUrl,
           onboarding_status: 'completed'
-        })
-        .eq('auth_user_id', user?.id);
+        });
 
       if (error) throw error;
 
