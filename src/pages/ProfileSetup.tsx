@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -163,44 +162,47 @@ export default function ProfileSetup() {
         logoUrl = await uploadLogo(formData.companyLogo);
       }
 
-      // Use the ensure_client_account function to update the client record
-      const { data, error } = await supabase.rpc('ensure_client_account', {
+      // Create the enhanced client profile with metadata
+      const profileData = {
+        user_id_param: user?.id,
+        company_name_param: formData.companyName,
+        first_name_param: formData.fullName.split(' ')[0] || '',
+        last_name_param: formData.fullName.split(' ').slice(1).join(' ') || '',
+        metadata_param: {
+          company_website: formData.websiteUrl || null,
+          industry: formData.industry,
+          company_size: formData.companySize,
+          contact_role: formData.contactRole,
+          contact_phone: formData.contactPhone || null,
+          company_country: formData.companyCountry,
+          company_city: formData.companyCity,
+          company_timezone: formData.companyTimezone,
+          company_logo_url: logoUrl,
+          onboarding_status: 'completed'
+        }
+      };
+
+      console.log('Creating enhanced client profile with data:', profileData);
+
+      // Use ensure_client_account_robust for robust profile creation
+      const { data, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: user?.id,
         company_name_param: formData.companyName,
         first_name_param: formData.fullName.split(' ')[0] || '',
         last_name_param: formData.fullName.split(' ').slice(1).join(' ') || ''
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error creating client account:', error);
+        throw error;
+      }
 
-      // Update additional metadata using a direct SQL call via edge function or RPC
-      // For now, we'll store the additional profile data in the metadata field
-      const profileMetadata = {
-        company_website: formData.websiteUrl || null,
-        industry: formData.industry,
-        company_size: formData.companySize,
-        contact_role: formData.contactRole,
-        contact_phone: formData.contactPhone || null,
-        company_country: formData.companyCountry,
-        company_city: formData.companyCity,
-        company_timezone: formData.companyTimezone,
-        company_logo_url: logoUrl,
-        onboarding_status: 'completed'
-      };
-
-      // Use a direct SQL update since we can't access the table directly
-      await supabase.rpc('sql', {
-        query: `
-          UPDATE client_workflow.clients 
-          SET metadata = $1, updated_at = now()
-          WHERE auth_user_id = $2
-        `,
-        params: [JSON.stringify(profileMetadata), user?.id]
-      });
+      console.log('Client account created successfully:', data);
 
       // Navigate to dashboard
       navigate('/dashboard');
     } catch (error: any) {
+      console.error('Profile setup error:', error);
       setError(error.message || 'Failed to save profile');
     } finally {
       setLoading(false);
