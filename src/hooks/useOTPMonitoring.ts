@@ -67,7 +67,7 @@ export function useOTPMonitoring() {
     });
   }, [logEvent]);
 
-  const trackNavigation = useCallback((email: string, user_id?: string, step: string, success: boolean = true) => {
+  const trackNavigation = useCallback((email: string, step: string, user_id?: string, success: boolean = true) => {
     logEvent({
       event_type: step === 'started' ? 'navigation_started' : 'navigation_completed',
       email,
