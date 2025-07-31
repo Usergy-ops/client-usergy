@@ -25,8 +25,8 @@ export function EnhancedOTPVerification({ email, password, onSuccess, onBack }: 
   const [statusMessage, setStatusMessage] = useState<string>('');
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { setSession, waitForClientAccount, diagnoseAccount } = useClientAuth();
-  const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
+  const { verifyOTP } = useClientAuth();
+  const { isVerifying, isResending, error, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
   const handleVerify = async (e: React.FormEvent) => {
@@ -40,55 +40,35 @@ export function EnhancedOTPVerification({ email, password, onSuccess, onBack }: 
       setAuthStep('verification');
       setStatusMessage('Verifying your email...');
 
-      const result = await verifyOTP(email, otpCode, password);
+      const result = await verifyOTP(email, otpCode);
 
-      if (result.success && result.data?.session) {
+      if (result.success) {
         setAuthStep('account-creation');
         setStatusMessage('Email verified! Creating your account...');
         
-        // Set the session in the auth context
-        setSession(result.data.session.session);
-
         // Wait a moment for the database trigger to process
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         setAuthStep('workspace-setup');
         setStatusMessage('Setting up your workspace...');
 
-        // Wait for the client account creation with enhanced feedback
-        const isClient = await waitForClientAccount(result.data.session.user.id, 12);
+        // Wait a bit more for client account creation
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
-        if (isClient) {
-          setAuthStep('complete');
-          setStatusMessage('Account setup complete! Redirecting...');
-          
-          toast({
-            title: "Welcome to Usergy!",
-            description: "Your account has been created successfully.",
-          });
+        setAuthStep('complete');
+        setStatusMessage('Account setup complete! Redirecting...');
+        
+        toast({
+          title: "Welcome to Usergy!",
+          description: "Your account has been created successfully.",
+        });
 
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          navigate('/dashboard', { replace: true });
-        } else {
-          // Try to diagnose what went wrong
-          const diagnosis = await diagnoseAccount(result.data.session.user.id);
-          console.log('Account setup diagnosis:', diagnosis);
-          
-          setAuthStep('verification');
-          setStatusMessage('');
-          
-          toast({
-            title: "Account setup incomplete",
-            description: "We'll complete the setup on the next page.",
-            variant: "default"
-          });
-          
-          navigate('/profile', { replace: true });
-        }
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        navigate('/client/dashboard', { replace: true });
         
       } else {
         await logOTPError(
-          new Error(result.error?.message || 'OTP verification failed'),
+          new Error(result.error || 'OTP verification failed'),
           'otp_verification_failed',
           email
         );

@@ -1,14 +1,15 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Mail, RefreshCw, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Mail, RefreshCw, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useOTPVerification } from '@/hooks/useOTPVerification';
+import { useErrorLogger } from '@/hooks/useErrorLogger';
 import { useNavigate } from 'react-router-dom';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { supabase } from '@/lib/supabase';
-import { cn } from '@/lib/utils';
+import { AuthStatusIndicator } from './AuthStatusIndicator';
 
 interface StreamlinedOTPVerificationProps {
   email: string;
@@ -17,316 +18,176 @@ interface StreamlinedOTPVerificationProps {
   onBack: () => void;
 }
 
-type VerificationStep = 'input' | 'verifying' | 'creating-account' | 'complete' | 'error';
-
 export function StreamlinedOTPVerification({ email, password, onSuccess, onBack }: StreamlinedOTPVerificationProps) {
   const [otpCode, setOtpCode] = useState('');
-  const [currentStep, setCurrentStep] = useState<VerificationStep>('input');
-  const [error, setError] = useState<string>('');
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const [isResending, setIsResending] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { setSession, waitForClientAccount } = useClientAuth();
-  const timeoutRef = useRef<NodeJS.Timeout>();
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Handle resend cooldown
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (resendCooldown > 0) {
-      interval = setInterval(() => {
-        setResendCooldown(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [resendCooldown]);
-
-  const clearError = () => {
-    setError('');
-    if (currentStep === 'error') {
-      setCurrentStep('input');
-    }
-  };
+  const { verifyOTP } = useClientAuth();
+  const { isVerifying, isResending, error, resendOTP, reset } = useOTPVerification();
+  const { logOTPError } = useErrorLogger();
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!otpCode || otpCode.length !== 6 || !password) {
+
+    if (!otpCode || otpCode.length !== 6) {
       return;
     }
 
-    setCurrentStep('verifying');
-    setError('');
+    setIsProcessing(true);
+    reset();
 
     try {
-      console.log('Starting streamlined OTP verification...');
-      
-      const { data, error: verifyError } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: { email, otpCode, password }
-      });
+      const result = await verifyOTP(email, otpCode);
 
-      if (verifyError) {
-        console.error('OTP verification error:', verifyError);
-        setCurrentStep('error');
-        setError('Verification failed. Please check your code and try again.');
-        return;
-      }
-
-      if (!data?.success) {
-        console.error('OTP verification failed:', data?.error);
-        setCurrentStep('error');
-        setError(data?.error || 'Invalid verification code. Please try again.');
-        return;
-      }
-
-      console.log('OTP verified successfully, creating session...');
-      setCurrentStep('creating-account');
-
-      // Set the session
-      if (data.session?.session) {
-        setSession(data.session.session);
-      }
-
-      // Wait for client account creation
-      console.log('Waiting for client account setup...');
-      const isClient = await waitForClientAccount(data.userId, 10);
-      
-      if (isClient) {
-        console.log('Client account confirmed, completing setup...');
-        setCurrentStep('complete');
-        
+      if (result.success) {
         toast({
-          title: "Welcome to Usergy!",
-          description: "Your account has been created successfully.",
+          title: "Email verified!",
+          description: "Welcome to Usergy! Setting up your account...",
         });
 
-        // Navigate after a brief delay for better UX
-        timeoutRef.current = setTimeout(() => {
-          navigate('/dashboard', { replace: true });
+        // Simple delay for user feedback
+        setTimeout(() => {
+          navigate('/client/dashboard', { replace: true });
           onSuccess();
-        }, 1500);
+        }, 1000);
       } else {
-        console.warn('Client account setup incomplete, redirecting to profile...');
-        toast({
-          title: "Account setup needed",
-          description: "Let's complete your profile setup.",
-        });
-        
-        navigate('/profile', { replace: true });
-        onSuccess();
+        await logOTPError(
+          new Error(result.error || 'OTP verification failed'),
+          'otp_verification_failed',
+          email
+        );
       }
-
     } catch (error) {
-      console.error('OTP verification exception:', error);
-      setCurrentStep('error');
-      setError('An unexpected error occurred. Please try again.');
+      await logOTPError(error, 'otp_verification_exception', email);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleResendCode = async () => {
-    if (resendCooldown > 0 || isResending) return;
-    
-    setIsResending(true);
-    setError('');
-
     try {
-      console.log('Resending OTP code...');
-      const { data, error: resendError } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
-        body: { email }
-      });
+      const result = await resendOTP(email);
 
-      if (resendError) {
-        console.error('Failed to resend OTP:', resendError);
-        toast({
-          title: "Resend failed",
-          description: "Please try again later.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      if (data?.success) {
-        setResendCooldown(60);
-        setOtpCode('');
-        clearError();
-        
+      if (result.success) {
         toast({
           title: "Code resent!",
           description: "A new verification code has been sent to your email.",
         });
+        setOtpCode('');
+        reset();
       } else {
-        toast({
-          title: "Resend failed",
-          description: data?.error || "Please try again later.",
-          variant: "destructive"
-        });
+        await logOTPError(
+          new Error(result.error?.message || 'Failed to resend OTP'),
+          'otp_resend_failed',
+          email
+        );
       }
     } catch (error) {
-      console.error('Resend OTP exception:', error);
-      toast({
-        title: "Resend failed",
-        description: "Please try again later.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsResending(false);
+      await logOTPError(error, 'otp_resend_exception', email);
     }
   };
-
-  const getStepMessage = () => {
-    switch (currentStep) {
-      case 'verifying':
-        return 'Verifying your code...';
-      case 'creating-account':
-        return 'Setting up your account...';
-      case 'complete':
-        return 'Setup complete! Redirecting...';
-      default:
-        return null;
-    }
-  };
-
-  const isProcessing = currentStep !== 'input' && currentStep !== 'error';
-  const stepMessage = getStepMessage();
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="text-center space-y-2">
-        <div className={cn(
-          "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4",
-          currentStep === 'complete' ? 'bg-green-100' : 'bg-primary/10'
-        )}>
-          {currentStep === 'complete' ? (
-            <CheckCircle className="w-8 h-8 text-green-600" />
-          ) : (
-            <Mail className="w-8 h-8 text-primary" />
-          )}
+        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Mail className="w-8 h-8 text-primary" />
         </div>
-        
-        <h2 className="text-2xl font-bold text-foreground">
-          {currentStep === 'complete' ? 'Welcome to Usergy!' : 'Check Your Email'}
-        </h2>
-        
+        <h2 className="text-2xl font-bold text-foreground">Verify Your Email</h2>
         <p className="text-muted-foreground">
-          {currentStep === 'complete' 
-            ? 'Your account has been created successfully!'
-            : `We've sent a 6-digit verification code to ${email}`
-          }
+          We've sent a 6-digit code to <strong>{email}</strong>
         </p>
       </div>
 
-      {/* Progress indicator */}
-      {isProcessing && stepMessage && (
-        <div className="bg-muted/50 rounded-lg p-4 flex items-center space-x-3">
-          <Loader2 className="w-4 h-4 animate-spin text-primary" />
-          <p className="text-sm font-medium text-foreground">{stepMessage}</p>
+      {isProcessing && (
+        <AuthStatusIndicator 
+          status="creating" 
+          message="Verifying your email and setting up your account..."
+        />
+      )}
+
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+          <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* Error display */}
-      {error && currentStep === 'error' && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-          <div className="flex items-start space-x-3">
-            <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-sm text-destructive font-medium">Verification Failed</p>
-              <p className="text-sm text-destructive mt-1">{error}</p>
+      <form onSubmit={handleVerify} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="otp" className="text-sm font-medium">Verification Code</Label>
+          <Input
+            id="otp"
+            type="text"
+            value={otpCode}
+            onChange={(e) => {
+              const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+              setOtpCode(value);
+              if (error) reset();
+            }}
+            placeholder="Enter 6-digit code"
+            className="text-center text-lg font-mono tracking-widest"
+            maxLength={6}
+            required
+            disabled={isProcessing}
+          />
+        </div>
+
+        <Button 
+          type="submit" 
+          className="w-full"
+          disabled={isProcessing || otpCode.length !== 6}
+        >
+          {isProcessing ? (
+            <div className="flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              <span>Verifying...</span>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* OTP Form - only show during input or error states */}
-      {(currentStep === 'input' || currentStep === 'error') && (
-        <>
-          <form onSubmit={handleVerify} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="otp" className="text-sm font-medium">Verification Code</Label>
-              <Input
-                id="otp"
-                type="text"
-                value={otpCode}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                  setOtpCode(value);
-                  clearError();
-                }}
-                placeholder="Enter 6-digit code"
-                className="text-center text-lg font-mono tracking-widest usergy-input"
-                maxLength={6}
-                required
-                disabled={isProcessing}
-              />
+          ) : (
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-4 h-4" />
+              <span>Verify & Continue</span>
             </div>
+          )}
+        </Button>
+      </form>
 
-            <Button 
-              type="submit" 
-              className="w-full usergy-btn-primary"
-              disabled={isProcessing || otpCode.length !== 6}
-            >
-              Verify & Create Account
-            </Button>
-          </form>
+      <div className="text-center space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Didn't receive the code?
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleResendCode}
+          disabled={isResending || isProcessing}
+        >
+          {isResending ? (
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>Sending...</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <RefreshCw className="w-4 h-4" />
+              <span>Resend Code</span>
+            </div>
+          )}
+        </Button>
+      </div>
 
-          <div className="text-center space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Didn't receive the code?
-            </p>
-            
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleResendCode}
-              disabled={resendCooldown > 0 || isResending || isProcessing}
-              className="w-full"
-            >
-              <div className="flex items-center space-x-2">
-                <RefreshCw className={cn("w-4 h-4", isResending && "animate-spin")} />
-                <span>
-                  {isResending ? 'Sending...' :
-                   resendCooldown > 0 ? `Resend in ${resendCooldown}s` :
-                   'Resend Code'}
-                </span>
-              </div>
-            </Button>
-          </div>
-
-          <div className="text-center">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={onBack}
-              className="text-muted-foreground hover:text-foreground"
-              disabled={isProcessing}
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Sign Up
-            </Button>
-          </div>
-        </>
-      )}
-
-      {/* Processing states - show helpful tips */}
-      {isProcessing && currentStep !== 'complete' && (
-        <div className="bg-muted/30 rounded-lg p-4 text-center space-y-2">
-          <p className="text-sm font-medium text-foreground">
-            Please wait while we set up your account
-          </p>
-          <p className="text-xs text-muted-foreground">
-            This usually takes less than 30 seconds. Please don't close this window.
-          </p>
-        </div>
-      )}
+      <div className="text-center">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onBack}
+          className="text-muted-foreground hover:text-foreground"
+          disabled={isProcessing}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Sign Up
+        </Button>
+      </div>
     </div>
   );
 }

@@ -2,17 +2,16 @@
 import React, { useState } from 'react';
 import { SimpleClientSignUpForm } from '@/components/client/SimpleClientSignUpForm';
 import { SimpleOTPVerification } from '@/components/client/SimpleOTPVerification';
-import { ClientAuthProvider } from '@/contexts/ClientAuthContext';
+import { ClientAuthProvider, useClientAuth } from '@/contexts/ClientAuthContext';
 
 export default function SimplifiedClientAuth() {
   const [step, setStep] = useState<'signup' | 'verification' | 'signin'>('signup');
   const [signupData, setSignupData] = useState<{
     email: string;
-    password: string;
   } | null>(null);
 
-  const handleSignupSuccess = (email: string, password: string) => {
-    setSignupData({ email, password });
+  const handleSignupSuccess = (email: string) => {
+    setSignupData({ email });
     setStep('verification');
   };
 
@@ -61,7 +60,6 @@ export default function SimplifiedClientAuth() {
             ) : signupData ? (
               <SimpleOTPVerification
                 email={signupData.email}
-                password={signupData.password}
                 onBack={handleBackToSignup}
               />
             ) : null}
@@ -80,6 +78,7 @@ function SimpleClientSignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => 
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { signIn } = useClientAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,10 +86,10 @@ function SimpleClientSignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => 
     setError(null);
 
     try {
-      const { signIn } = await import('@/contexts/ClientAuthContext');
-      // This would typically be handled by the context
-      // For now, just simulate the sign in process
-      console.log('Sign in attempt:', formData.email);
+      const result = await signIn(formData.email, formData.password);
+      if (!result.success) {
+        setError(result.error || 'Sign in failed. Please try again.');
+      }
     } catch (error) {
       setError('Sign in failed. Please try again.');
     } finally {

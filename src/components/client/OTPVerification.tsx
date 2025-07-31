@@ -26,8 +26,8 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
   const [resendCooldown, setResendCooldown] = useState(0);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { waitForClientAccount } = useClientAuth();
-  const { isVerifying, isResending, error, verifyOTP, resendOTP, reset } = useOTPVerification();
+  const { verifyOTP } = useClientAuth();
+  const { isVerifying, isResending, error, resendOTP, reset } = useOTPVerification();
   const { logOTPError } = useErrorLogger();
 
   React.useEffect(() => {
@@ -52,7 +52,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
     
     try {
       console.log('Starting simplified OTP verification process...');
-      const result = await verifyOTP(email, otpCode, password || '');
+      const result = await verifyOTP(email, otpCode);
 
       if (result.success) {
         console.log('OTP verification successful');
@@ -66,7 +66,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
         // The backend trigger automatically creates client account
         // Just wait a moment and navigate
         setTimeout(() => {
-          navigate('/dashboard', { replace: true });
+          navigate('/client/dashboard', { replace: true });
           onSuccess();
         }, 1500);
         
@@ -75,7 +75,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
         setVerificationStatus('error');
         
         await logOTPError(
-          new Error(result.error?.message || 'OTP verification failed'),
+          new Error(result.error || 'OTP verification failed'),
           'otp_verification_failed',
           email
         );

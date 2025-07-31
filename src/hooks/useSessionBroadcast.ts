@@ -1,12 +1,10 @@
 
 import { useEffect, useCallback } from 'react';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
+import { supabase } from '@/lib/supabase';
 
 const BROADCAST_CHANNEL = 'usergy_auth_sync';
 
 export function useSessionBroadcast() {
-  const { refreshSession } = useClientAuth();
-
   // Enhanced broadcast notification with error handling
   const notifyAuthChange = useCallback((eventType: string = 'AUTH_STATE_CHANGE') => {
     if (typeof BroadcastChannel === 'undefined') {
@@ -24,6 +22,19 @@ export function useSessionBroadcast() {
       channel.close();
     } catch (error) {
       console.error('Error broadcasting auth change:', error);
+    }
+  }, []);
+
+  // Simple session refresh function
+  const refreshSession = useCallback(async () => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Error refreshing session:', error);
+      }
+      console.log('Session refreshed:', session?.user?.email);
+    } catch (error) {
+      console.error('Exception refreshing session:', error);
     }
   }, []);
 

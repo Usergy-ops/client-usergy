@@ -1,120 +1,86 @@
 
-import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { NetworkNodes } from '@/components/client/NetworkNodes';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { AuthStatusIndicator } from '@/components/client/AuthStatusIndicator';
-import { AuthProgressSteps } from '@/components/client/AuthProgressSteps';
+import { supabase } from '@/lib/supabase';
 
 export default function AuthCallback() {
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { session, loading, waitForClientAccount, diagnoseAccount } = useClientAuth();
-  const processedRef = useRef(false);
-  const [status, setStatus] = useState<'checking' | 'creating' | 'success' | 'error'>('checking');
-  const [statusMessage, setStatusMessage] = useState('Checking your authentication...');
-  const [authStep, setAuthStep] = useState<'verification' | 'account-creation' | 'workspace-setup' | 'complete'>('account-creation');
+  const { user, isClientAccount } = useClientAuth();
+  const [status, setStatus] = useState('processing');
 
   useEffect(() => {
-    if (processedRef.current || loading) {
-      return;
-    }
-
-    const handleCallback = async () => {
-      if (!session?.user?.id) {
-        console.log('AuthCallback: No user session found, redirecting to home');
-        setStatus('error');
-        setStatusMessage('No user session found');
-        setTimeout(() => navigate('/', { replace: true }), 2000);
-        return;
-      }
-
-      processedRef.current = true;
-      const userId = session.user.id;
-      console.log(`AuthCallback: Processing for user ${userId}`);
-
+    const handleAuthCallback = async () => {
       try {
-        setStatus('creating');
-        setAuthStep('account-creation');
-        setStatusMessage('Setting up your account...');
-
-        // Give the database trigger some time to process the new user
-        console.log('AuthCallback: Waiting for database trigger processing...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        setAuthStep('workspace-setup');
-        setStatusMessage('Preparing your workspace...');
-
-        // Wait for client account creation with more attempts
-        const isClient = await waitForClientAccount(userId, 15);
+        // Handle the auth callback
+        const { data, error } = await supabase.auth.getSession();
         
-        if (isClient) {
-          console.log('AuthCallback: Client account confirmed, redirecting to dashboard');
-          setAuthStep('complete');
+        if (error) {
+          console.error('Auth callback error:', error);
+          setStatus('error');
+          return;
+        }
+
+        if (data.session) {
           setStatus('success');
-          setStatusMessage('Account ready! Redirecting to dashboard...');
           
+          // Give the context time to update
           setTimeout(() => {
-            navigate('/dashboard', { replace: true });
-          }, 1500);
+            if (isClientAccount) {
+              navigate('/client/dashboard', { replace: true });
+            } else {
+              navigate('/client/profile', { replace: true });
+            }
+          }, 1000);
         } else {
-          // Diagnose what went wrong
-          const diagnosis = await diagnoseAccount(userId);
-          console.log('AuthCallback: Account diagnosis result:', diagnosis);
-          
-          if (diagnosis.user_exists && diagnosis.account_type_exists) {
-            console.log('AuthCallback: User and account type exist but not client, redirecting to profile setup');
-            setStatus('error');
-            setStatusMessage('Account setup incomplete, redirecting to profile setup...');
-            setTimeout(() => navigate('/profile', { replace: true }), 2000);
-          } else {
-            console.log('AuthCallback: Account setup incomplete, redirecting to home');
-            setStatus('error');
-            setStatusMessage('Account setup failed, please try again...');
-            setTimeout(() => navigate('/', { replace: true }), 3000);
-          }
+          console.log('No session found in auth callback');
+          navigate('/', { replace: true });
         }
       } catch (error) {
-        console.error('AuthCallback: Error during processing, redirecting to home', error);
+        console.error('Auth callback exception:', error);
         setStatus('error');
-        setStatusMessage('An error occurred during account setup');
-        setTimeout(() => navigate('/', { replace: true }), 3000);
       }
     };
 
-    handleCallback();
-  }, [session, loading, navigate, waitForClientAccount, diagnoseAccount]);
+    handleAuthCallback();
+  }, [navigate, isClientAccount]);
+
+  const getStatusMessage = () => {
+    switch (status) {
+      case 'processing':
+        return 'Processing authentication...';
+      case 'success':
+        return 'Authentication successful! Redirecting...';
+      case 'error':
+        return 'Authentication failed. Redirecting to home...';
+      default:
+        return 'Processing...';
+    }
+  };
+
+  if (status === 'error') {
+    setTimeout(() => navigate('/', { replace: true }), 3000);
+  }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center">
-      <NetworkNodes />
-      <div className="glass-card p-8 text-center relative z-10 max-w-2xl mx-4">
-        <div className="space-y-8">
-          {/* Progress Steps */}
-          <AuthProgressSteps currentStep={authStep} />
-          
-          {/* Status Indicator */}
-          <AuthStatusIndicator 
-            status={status} 
-            message={statusMessage}
-          />
-          
-          {/* Additional Information */}
-          <div className="space-y-2">
-            <p className="text-lg font-semibold text-foreground">Setting up your Usergy account</p>
-            <p className="text-sm text-muted-foreground">
-              {status === 'checking' && 'Verifying your authentication status...'}
-              {status === 'creating' && 'This usually takes less than 30 seconds'}
-              {status === 'success' && 'Welcome to Usergy! Taking you to your dashboard...'}
-              {status === 'error' && 'We encountered an issue, but we\'ll get you sorted out'}
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="glass-card p-8 text-center max-w-md">
+        <div className="flex items-center justify-center space-x-4 mb-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div>
+            <h1 className="text-xl font-semibold">Authentication</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {getStatusMessage()}
             </p>
           </div>
-
-          {status === 'creating' && (
-            <div className="bg-muted/20 rounded-lg p-4 text-xs text-muted-foreground">
-              <p>💡 <strong>Tip:</strong> Keep this window open while we set up your account</p>
-            </div>
-          )}
         </div>
+        
+        {user && (
+          <div className="text-sm text-muted-foreground">
+            Welcome, {user.email}
+          </div>
+        )}
       </div>
     </div>
   );
