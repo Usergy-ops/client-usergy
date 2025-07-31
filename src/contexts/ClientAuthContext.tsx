@@ -1,4 +1,3 @@
-
 import React, {
   createContext,
   useState,
@@ -19,7 +18,14 @@ interface ClientAuthContextType {
   verifyOTP: (email: string, otp: string) => Promise<{ success: boolean; error?: string }>;
   signInWithGoogle: () => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
+  setSession: (session: Session | null) => void;
+  refreshSession: () => Promise<void>;
+  waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
+  diagnoseAccount: (userId: string) => Promise<any>;
+  repairAccount: (userId: string) => Promise<boolean>;
+  getAccountHealth: (userId: string) => Promise<any>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(
@@ -44,6 +50,79 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       
       return data?.account_type === 'client';
     } catch {
+      return false;
+    }
+  }, []);
+
+  // Refresh session method
+  const refreshSession = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+      setUser(session?.user || null);
+      
+      if (session?.user) {
+        const isClient = await checkClientAccount(session.user.id);
+        setIsClientAccount(isClient);
+      } else {
+        setIsClientAccount(false);
+      }
+    } catch (error) {
+      console.error('Session refresh error:', error);
+    }
+  }, [checkClientAccount]);
+
+  // Wait for client account creation
+  const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10) => {
+    for (let i = 0; i < maxAttempts; i++) {
+      const isClient = await checkClientAccount(userId);
+      if (isClient) return true;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    return false;
+  }, [checkClientAccount]);
+
+  // Diagnose account issues
+  const diagnoseAccount = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase.rpc('diagnose_client_account', {
+        user_id_param: userId
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Account diagnosis error:', error);
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }, []);
+
+  // Get account health
+  const getAccountHealth = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase.rpc('get_account_health', {
+        user_id_param: userId
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Account health check error:', error);
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }, []);
+
+  // Repair account
+  const repairAccount = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase.rpc('repair_client_account', {
+        user_id_param: userId
+      });
+      
+      if (error) throw error;
+      return data?.success || false;
+    } catch (error) {
+      console.error('Account repair error:', error);
       return false;
     }
   }, []);
@@ -181,6 +260,9 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
+  // Alias for backwards compatibility
+  const signIn = signInWithPassword;
+
   // Sign out
   const signOut = useCallback(async () => {
     try {
@@ -207,7 +289,14 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     verifyOTP,
     signInWithGoogle,
     signInWithPassword,
+    signIn,
     signOut,
+    setSession,
+    refreshSession,
+    waitForClientAccount,
+    diagnoseAccount,
+    repairAccount,
+    getAccountHealth,
   };
 
   return (

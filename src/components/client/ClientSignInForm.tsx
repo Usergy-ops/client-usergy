@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
@@ -30,12 +29,7 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
       setLoading(true);
       setError('');
       
-      const { error } = await signInWithGoogle();
-
-      if (error) {
-        console.error('Google OAuth error:', error);
-        setError('Failed to authenticate with Google. Please try again.');
-      }
+      await signInWithGoogle();
     } catch (error) {
       console.error('Google auth error:', error);
       setError('An unexpected error occurred with Google authentication');
@@ -55,12 +49,13 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
     setLoading(true);
     setError('');
     
-    const { error } = await signIn(formData.email, formData.password);
+    const result = await signIn(formData.email, formData.password);
     
-    if (error) {
-      setError(error.message);
-      setLoading(false);
+    if (!result.success) {
+      setError(result.error || 'Sign in failed');
     }
+    
+    setLoading(false);
   };
 
   return (
