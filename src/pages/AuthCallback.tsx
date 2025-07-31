@@ -34,16 +34,19 @@ export default function AuthCallback() {
               if (profileCheck.isComplete) {
                 navigate('/dashboard', { replace: true });
               } else {
-                navigate('/profile', { replace: true });
+                // For now, redirect to dashboard even if profile is incomplete
+                // This prevents users from being stuck in redirect loops
+                console.log('Profile incomplete, but redirecting to dashboard to prevent loops');
+                navigate('/dashboard', { replace: true });
               }
             } catch (error) {
               console.error('Profile check error during callback:', error);
-              // Default to profile setup if check fails
-              navigate('/profile', { replace: true });
+              // Default to dashboard if check fails
+              navigate('/dashboard', { replace: true });
             }
           } else {
-            // If not a client account, redirect to profile setup
-            navigate('/profile', { replace: true });
+            // If not a client account, redirect to dashboard
+            navigate('/dashboard', { replace: true });
           }
         } else {
           console.log('No session found in auth callback');

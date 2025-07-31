@@ -11,7 +11,7 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
   try {
     console.log('Checking profile completion for user:', userId);
     
-    // Call the database function from the correct schema (client_workspace)
+    // Call the database function to check if basic client record exists
     const { data, error } = await supabase.rpc('is_profile_complete', {
       user_id_param: userId
     });
@@ -40,43 +40,31 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
 
 export async function getIncompleteProfileFields(userId: string): Promise<string[]> {
   try {
-    // Get the current profile data to identify missing fields
-    const { data: profile, error } = await supabase
-      .from('client_workspace.company_profiles')
-      .select('company_name, industry, company_size, contact_role, company_country, company_city, company_timezone, onboarding_status')
+    // Get the current client data to identify missing fields
+    const { data: client, error } = await supabase
+      .from('client_workflow.clients')
+      .select('email, company_name, full_name')
       .eq('auth_user_id', userId)
       .single();
 
     if (error) {
-      console.error('Error fetching profile data:', error);
+      console.error('Error fetching client data:', error);
       return [];
     }
 
-    if (!profile) {
-      return ['company_name', 'industry', 'company_size', 'contact_role', 'company_country', 'company_city', 'company_timezone'];
+    if (!client) {
+      return ['email', 'company_name'];
     }
 
     const missingFields: string[] = [];
-    const requiredFields = [
-      'company_name',
-      'industry',
-      'company_size', 
-      'contact_role',
-      'company_country',
-      'company_city',
-      'company_timezone'
-    ];
+    const requiredFields = ['email', 'company_name'];
 
     requiredFields.forEach(field => {
-      const value = profile[field as keyof typeof profile];
+      const value = client[field as keyof typeof client];
       if (!value || value === '') {
         missingFields.push(field);
       }
     });
-
-    if (profile.onboarding_status !== 'completed') {
-      missingFields.push('onboarding_status');
-    }
 
     return missingFields;
   } catch (error) {

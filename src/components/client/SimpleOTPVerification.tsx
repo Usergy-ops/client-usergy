@@ -1,12 +1,11 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { ArrowLeft, Mail, AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { useOTPVerification } from '@/hooks/useOTPVerification';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { useSimpleAuthFeedback } from '@/hooks/useSimpleAuthFeedback';
 
 interface SimpleOTPVerificationProps {
   email: string;
@@ -14,146 +13,136 @@ interface SimpleOTPVerificationProps {
 }
 
 export function SimpleOTPVerification({ email, onBack }: SimpleOTPVerificationProps) {
-  const [otp, setOtp] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [resendLoading, setResendLoading] = useState(false);
   const navigate = useNavigate();
-  const { verifyOTP } = useClientAuth();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [otp, setOtp] = useState('');
+  const { verifyOTP, resendOTP, isVerifying, isResending, error, reset } = useOTPVerification();
+  const { showSuccess, showError } = useSimpleAuthFeedback();
 
-  // Auto-focus on input
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
+  const handleVerify = async () => {
+    if (otp.length !== 6) {
+      showError('Invalid Code', 'Please enter a valid 6-digit verification code.');
+      return;
     }
-  }, []);
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (otp.length !== 6) return;
-
-    setLoading(true);
-    setError('');
-
-    const result = await verifyOTP(email, otp);
-    
-    if (result.success) {
-      navigate('/dashboard');
-    } else {
-      setError(result.error || 'Invalid verification code');
-    }
-    
-    setLoading(false);
-  };
-
-  const handleResendOTP = async () => {
-    setResendLoading(true);
+    reset();
     
     try {
-      // Call the resend endpoint
-      const { error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
-        body: { email }
-      });
+      const result = await verifyOTP(email, otp);
       
-      if (!error) {
+      if (result.success) {
+        showSuccess('Verification Successful', 'Welcome to Usergy! Redirecting to your dashboard...');
+        // Small delay to show success message before redirect
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 1500);
+      } else {
+        showError('Verification Failed', result.error?.message || 'Invalid verification code. Please try again.');
         setOtp('');
-        setError('');
       }
     } catch (error) {
-      console.error('Resend error:', error);
-    } finally {
-      setResendLoading(false);
+      console.error('OTP verification error:', error);
+      showError('Verification Failed', 'An unexpected error occurred. Please try again.');
+      setOtp('');
+    }
+  };
+
+  const handleResend = async () => {
+    reset();
+    
+    try {
+      const result = await resendOTP(email);
+      
+      if (result.success) {
+        showSuccess('Code Sent', 'A new verification code has been sent to your email.');
+      } else {
+        showError('Resend Failed', result.error?.message || 'Failed to resend verification code. Please try again.');
+      }
+    } catch (error) {
+      console.error('OTP resend error:', error);
+      showError('Resend Failed', 'An unexpected error occurred while resending. Please try again.');
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="text-center space-y-2">
-        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Mail className="w-8 h-8 text-primary" />
-        </div>
-        <h2 className="text-2xl font-bold text-foreground">Check Your Email</h2>
-        <p className="text-muted-foreground">
-          We've sent a 6-digit verification code to <strong>{email}</strong>
-        </p>
-      </div>
+      {/* Back Button */}
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={onBack}
+        className="p-0 h-auto font-normal text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4 mr-2" />
+        Back to sign up
+      </Button>
 
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 animate-in slide-in-from-top-2">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="h-4 w-4 text-destructive" />
-            <p className="text-sm text-destructive">{error}</p>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleVerify} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="otp" className="text-sm font-medium">Verification Code</Label>
-          <Input
-            ref={inputRef}
-            id="otp"
-            type="text"
-            value={otp}
-            onChange={(e) => {
-              const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-              setOtp(value);
-              setError('');
-            }}
-            placeholder="Enter 6-digit code"
-            className="text-center text-lg font-mono tracking-widest usergy-input"
-            maxLength={6}
-            required
-            disabled={loading}
-          />
-        </div>
-
-        <Button 
-          type="submit"
-          className="w-full usergy-btn-primary"
-          disabled={loading || otp.length !== 6}
-        >
-          {loading ? (
-            <div className="flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>Verifying...</span>
-            </div>
-          ) : (
-            'Verify'
-          )}
-        </Button>
-      </form>
-
-      <div className="text-center space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Didn't receive the code?
-        </p>
-        
-        <Button
-          type="button"
-          variant="link"
-          onClick={handleResendOTP}
-          disabled={resendLoading}
-          className="text-primary hover:underline"
-        >
-          {resendLoading ? 'Sending...' : 'Resend OTP'}
-        </Button>
-      </div>
-
+      {/* Email Display */}
       <div className="text-center">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onBack}
-          className="text-muted-foreground hover:text-foreground"
-          disabled={loading}
+        <p className="text-sm text-muted-foreground">
+          We've sent a 6-digit verification code to
+        </p>
+        <p className="font-semibold text-foreground mt-1">{email}</p>
+      </div>
+
+      {/* OTP Input */}
+      <div className="flex flex-col items-center space-y-4">
+        <InputOTP
+          value={otp}
+          onChange={setOtp}
+          maxLength={6}
+          disabled={isVerifying}
         >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Sign Up
-        </Button>
+          <InputOTPGroup>
+            <InputOTPSlot index={0} />
+            <InputOTPSlot index={1} />
+            <InputOTPSlot index={2} />
+            <InputOTPSlot index={3} />
+            <InputOTPSlot index={4} />
+            <InputOTPSlot index={5} />
+          </InputOTPGroup>
+        </InputOTP>
+
+        {error && (
+          <p className="text-sm text-destructive text-center">{error}</p>
+        )}
+      </div>
+
+      {/* Verify Button */}
+      <Button 
+        onClick={handleVerify}
+        disabled={otp.length !== 6 || isVerifying}
+        className="w-full"
+        size="lg"
+      >
+        {isVerifying ? (
+          <>
+            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+            Verifying...
+          </>
+        ) : (
+          'Verify Email'
+        )}
+      </Button>
+
+      {/* Resend Link */}
+      <div className="text-center">
+        <p className="text-sm text-muted-foreground">
+          Didn't receive the code?{' '}
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={isResending}
+            className="text-primary hover:underline font-medium disabled:opacity-50"
+          >
+            {isResending ? 'Sending...' : 'Resend code'}
+          </button>
+        </p>
+      </div>
+
+      {/* Help Text */}
+      <div className="text-center text-xs text-muted-foreground">
+        <p>The verification code will expire in 10 minutes.</p>
+        <p className="mt-1">Check your spam folder if you don't see the email.</p>
       </div>
     </div>
   );

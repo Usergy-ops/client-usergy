@@ -29,7 +29,8 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
         if (result.error) {
           console.error('Profile completion check error:', result.error);
           setProfileError(result.error);
-          setIsProfileComplete(false);
+          // For now, assume profile is complete if there's an error to avoid blocking access
+          setIsProfileComplete(true);
         } else {
           console.log('Profile completion check result:', result.isComplete);
           setIsProfileComplete(result.isComplete);
@@ -37,7 +38,8 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
       } catch (error) {
         console.error('Exception in profile completion check:', error);
         setProfileError('Failed to check profile completion');
-        setIsProfileComplete(false);
+        // For now, assume profile is complete if there's an error to avoid blocking access
+        setIsProfileComplete(true);
       } finally {
         setCheckingProfile(false);
       }
@@ -85,13 +87,10 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
     return <Navigate to="/" replace />;
   }
 
-  // Check if profile is complete
-  if (!isProfileComplete) {
-    console.log('EnhancedClientProtectedRoute: Profile incomplete, redirecting to profile setup');
-    if (profileError) {
-      console.log('Profile check error:', profileError);
-    }
-    return <Navigate to="/profile" replace />;
+  // Check if profile is complete - for now, allow access even if incomplete
+  // This prevents users from being stuck in redirect loops
+  if (!isProfileComplete && !profileError) {
+    console.log('EnhancedClientProtectedRoute: Profile incomplete, but allowing access to prevent redirect loops');
   }
 
   // All checks passed, render protected content
