@@ -39,7 +39,7 @@ export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
     return <Navigate to="/" replace />;
   }
 
-  // Check if user is a client account
+  // Check if user is a client account (now handled by the context automatically)
   if (!isClientAccount) {
     console.log('ClientProtectedRoute: Not a client account, redirecting to home');
     return <Navigate to="/" replace />;

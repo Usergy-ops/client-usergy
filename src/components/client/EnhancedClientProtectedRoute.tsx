@@ -21,38 +21,19 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
       }
 
       try {
-        // Check if profile is complete in client_workspace.company_profiles
-        const { data: profile, error } = await supabase
-          .from('client_workspace.company_profiles')
-          .select('company_name, industry, company_size, contact_role, company_country, company_city, company_timezone, onboarding_status')
-          .eq('auth_user_id', user.id)
-          .single();
+        console.log('Checking profile completion for user:', user.id);
+        
+        // Use the new database function to check profile completeness
+        const { data, error } = await supabase.rpc('is_profile_complete', {
+          user_id_param: user.id
+        });
 
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
           console.error('Error checking profile completion:', error);
           setIsProfileComplete(false);
-        } else if (profile) {
-          // Check if all required fields are completed
-          const requiredFields = [
-            'company_name',
-            'industry', 
-            'company_size',
-            'contact_role',
-            'company_country',
-            'company_city',
-            'company_timezone'
-          ];
-          
-          const isComplete = requiredFields.every(field => 
-            profile?.[field as keyof typeof profile] && 
-            profile[field as keyof typeof profile] !== ''
-          ) && profile?.onboarding_status === 'completed';
-          
-          console.log('Profile completion check:', { profile, isComplete });
-          setIsProfileComplete(isComplete);
         } else {
-          // No profile found
-          setIsProfileComplete(false);
+          console.log('Profile completion check result:', data);
+          setIsProfileComplete(data === true);
         }
       } catch (error) {
         console.error('Exception in profile completion check:', error);
