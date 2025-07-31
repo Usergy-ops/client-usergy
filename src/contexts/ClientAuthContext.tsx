@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
 import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
+import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -116,7 +117,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         console.log(`Simplified wait: Attempt ${attempt}/${maxAttempts} - Checking client status...`);
         
         // Use simplified client check
-        const isClient = await ClientAccountDiagnostics.isClientAccount(userId);
+        const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
 
         if (isClient) {
           console.log(`Simplified wait: SUCCESS! Client account confirmed on attempt ${attempt}`);

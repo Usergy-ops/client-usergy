@@ -1,5 +1,6 @@
 
 import { useState, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
 import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface AccountStatus {
