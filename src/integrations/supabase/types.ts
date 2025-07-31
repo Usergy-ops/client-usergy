@@ -526,6 +526,10 @@ export type Database = {
         Args: { user_id_param?: string }
         Returns: boolean
       }
+      is_profile_complete: {
+        Args: { user_id_param: string }
+        Returns: boolean
+      }
       is_user_account: {
         Args: { user_id_param?: string }
         Returns: boolean
