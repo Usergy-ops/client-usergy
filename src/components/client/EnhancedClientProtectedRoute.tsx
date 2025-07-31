@@ -1,4 +1,3 @@
-
 import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Navigate } from 'react-router-dom';
@@ -15,7 +14,7 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
   const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkProfileCompletion = async () => {
+    const performProfileCheck = async () => {
       if (!user || !isClientAccount) {
         setCheckingProfile(false);
         return;
@@ -44,7 +43,7 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
     };
 
     if (!loading && user && isClientAccount) {
-      checkProfileCompletion();
+      performProfileCheck();
     } else if (!loading) {
       setCheckingProfile(false);
     }
