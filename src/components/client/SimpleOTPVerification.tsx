@@ -40,7 +40,7 @@ export function SimpleOTPVerification({ email, onBack }: SimpleOTPVerificationPr
     const result = await verifyOTP(email, otp);
     
     if (result.success) {
-      navigate('/client/dashboard');
+      navigate('/dashboard');
     } else {
       setError(result.error || 'Invalid verification code');
     }

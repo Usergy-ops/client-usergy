@@ -1,3 +1,4 @@
+
 import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Navigate } from 'react-router-dom';

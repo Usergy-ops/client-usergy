@@ -32,18 +32,18 @@ export default function AuthCallback() {
               const profileCheck = await checkProfileCompletion(data.session.user.id);
               
               if (profileCheck.isComplete) {
-                navigate('/client/dashboard', { replace: true });
+                navigate('/dashboard', { replace: true });
               } else {
-                navigate('/client/profile', { replace: true });
+                navigate('/profile', { replace: true });
               }
             } catch (error) {
               console.error('Profile check error during callback:', error);
               // Default to profile setup if check fails
-              navigate('/client/profile', { replace: true });
+              navigate('/profile', { replace: true });
             }
           } else {
             // If not a client account, redirect to profile setup
-            navigate('/client/profile', { replace: true });
+            navigate('/profile', { replace: true });
           }
         } else {
           console.log('No session found in auth callback');
