@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
@@ -14,11 +13,12 @@ export function TestConnection() {
   const [rlsTestResults, setRlsTestResults] = useState<any[]>([]);
   const [accountHealth, setAccountHealth] = useState<any>(null);
   const [isRepairing, setIsRepairing] = useState(false);
+  const [triggerTestResult, setTriggerTestResult] = useState<any>(null);
 
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        // Test basic database connection
+        // Test basic database connection with cleaned up system
         const { data, error } = await supabase
           .from('account_types')
           .select('id, account_type')
@@ -28,7 +28,7 @@ export function TestConnection() {
         
         console.log('Basic connection test passed:', data);
         
-        // Test the client check function if user is logged in
+        // Test the cleaned up client check function if user is logged in
         if (user) {
           const { data: clientCheck, error: clientError } = await supabase.rpc('is_client_account', {
             user_id_param: user.id
@@ -96,16 +96,31 @@ export function TestConnection() {
     }
   };
 
+  const testSimplifiedTrigger = async () => {
+    if (!user) return;
+    
+    try {
+      const result = await ClientAccountDiagnostics.testSimplifiedTrigger(user.email || '');
+      setTriggerTestResult(result);
+    } catch (error) {
+      console.error('Trigger test error:', error);
+      setTriggerTestResult({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  };
+
   const performRepair = async () => {
     if (!user) return;
     
     setIsRepairing(true);
     try {
-      console.log('Performing account repair...');
+      console.log('Performing account repair with cleaned up system...');
       const repairSuccess = await repairAccount(user.id, user.user_metadata);
       
       if (repairSuccess) {
-        setDiagnosticInfo({ message: 'Account repair successful' });
+        setDiagnosticInfo({ message: 'Account repair successful with cleaned up system' });
         // Re-run health check after repair
         setTimeout(runHealthCheck, 1000);
       } else {
@@ -131,7 +146,7 @@ export function TestConnection() {
   return (
     <div className="p-4 border rounded-lg bg-card space-y-4">
       <h2 className={`text-lg font-semibold ${getStatusColor()}`}>
-        Enhanced Connection Status: {status}
+        Cleaned Up Connection Status: {status}
       </h2>
       
       {errorMessage && (
@@ -151,7 +166,7 @@ export function TestConnection() {
         <div className="space-y-2">
           <div className="flex gap-2 flex-wrap">
             <Button onClick={runDiagnostic} variant="outline" size="sm">
-              Run Enhanced Diagnostic
+              Run Cleaned Diagnostic
             </Button>
             
             <Button onClick={runHealthCheck} variant="outline" size="sm">
@@ -159,7 +174,11 @@ export function TestConnection() {
             </Button>
             
             <Button onClick={testRLSPolicies} variant="outline" size="sm">
-              Test RLS Policies
+              Test Cleaned RLS
+            </Button>
+            
+            <Button onClick={testSimplifiedTrigger} variant="outline" size="sm">
+              Test Simplified Trigger
             </Button>
             
             <Button 
@@ -168,8 +187,31 @@ export function TestConnection() {
               size="sm"
               disabled={isRepairing}
             >
-              {isRepairing ? 'Repairing...' : 'Repair Account'}
+              {isRepairing ? 'Repairing...' : 'Repair with Clean System'}
             </Button>
+          </div>
+        </div>
+      )}
+      
+      {triggerTestResult && (
+        <div className="mt-4 p-3 bg-muted rounded-lg">
+          <h3 className="text-sm font-semibold mb-2">Simplified Trigger Test:</h3>
+          <div className="text-xs space-y-1">
+            {triggerTestResult.success ? (
+              <>
+                <div>User ID: {triggerTestResult.data?.user_id}</div>
+                <div>Email: {triggerTestResult.data?.email}</div>
+                <div>Has Account Type: {triggerTestResult.data?.has_account_type ? '✓' : '✗'}</div>
+                <div>Account Type: {triggerTestResult.data?.account_type || 'None'}</div>
+                <div>Has Company Profile: {triggerTestResult.data?.has_company_profile ? '✓' : '✗'}</div>
+                <div>Company Name: {triggerTestResult.data?.company_name || 'None'}</div>
+                <div className={triggerTestResult.data?.trigger_working ? 'text-green-600' : 'text-red-600'}>
+                  Trigger Working: {triggerTestResult.data?.trigger_working ? '✓' : '✗'}
+                </div>
+              </>
+            ) : (
+              <div className="text-red-600">Error: {triggerTestResult.error}</div>
+            )}
           </div>
         </div>
       )}
@@ -219,11 +261,11 @@ export function TestConnection() {
                 <div>User Exists: {diagnosticInfo.user_exists ? '✓' : '✗'}</div>
                 <div>Email: {diagnosticInfo.user_email}</div>
                 <div>Provider: {diagnosticInfo.user_provider}</div>
-                <div>Has Account Type: {diagnosticInfo.has_account_type ? '✓' : '✗'}</div>
+                <div>Has Account Type: {diagnosticInfo.account_type_exists ? '✓' : '✗'}</div>
                 <div>Account Type: {diagnosticInfo.account_type}</div>
-                <div>Has Company Profile: {diagnosticInfo.has_company_profile ? '✓' : '✗'}</div>
+                <div>Has Company Profile: {diagnosticInfo.company_profile_exists ? '✓' : '✗'}</div>
                 <div>Company: {diagnosticInfo.company_name}</div>
-                <div>Is Client Account: {diagnosticInfo.is_client_account_result ? '✓' : '✗'}</div>
+                <div>Is Client Account: {diagnosticInfo.is_client_account ? '✓' : '✗'}</div>
                 {diagnosticInfo.issues && diagnosticInfo.issues.length > 0 && (
                   <div className="mt-2 text-orange-600">
                     <div className="font-semibold">Issues:</div>
@@ -248,7 +290,7 @@ export function TestConnection() {
       
       {rlsTestResults.length > 0 && (
         <div className="mt-4 p-3 bg-muted rounded-lg">
-          <h3 className="text-sm font-semibold mb-2">RLS Policy Test Results:</h3>
+          <h3 className="text-sm font-semibold mb-2">Cleaned RLS Policy Test Results:</h3>
           <div className="text-xs space-y-1">
             {rlsTestResults.map((result, idx) => (
               <div key={idx} className={result.can_access ? 'text-green-600' : 'text-red-600'}>

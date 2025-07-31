@@ -31,12 +31,13 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Running comprehensive diagnostic for user: ${userId}`);
       
-      const { data: result, error } = await supabase.rpc('diagnose_client_account_comprehensive' as any, {
+      // Use the simplified diagnostic approach since we cleaned up the triggers
+      const { data: result, error } = await supabase.rpc('get_client_account_status', {
         user_id_param: userId
       });
 
       if (error) {
-        console.error('Comprehensive diagnostic RPC failed:', error);
+        console.error('Diagnostic RPC failed:', error);
         return {
           success: false,
           error: error.message,
@@ -65,18 +66,42 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Testing RLS policies for user: ${userId}`);
       
-      const { data: results, error } = await supabase.rpc('test_rls_policies_for_user' as any, {
-        test_user_id: userId
-      });
+      // Test basic account_types access
+      const { data: accountTypes, error: accountError } = await supabase
+        .from('account_types')
+        .select('*')
+        .eq('auth_user_id', userId);
 
-      if (error) {
-        console.error('RLS policy test failed:', error);
+      if (accountError) {
+        console.error('Account types RLS test failed:', accountError);
         return {
           success: false,
-          error: error.message,
+          error: accountError.message,
           timestamp
         };
       }
+
+      // Test company_profiles access in client_workspace schema
+      const { data: profiles, error: profileError } = await supabase
+        .schema('client_workspace')
+        .from('company_profiles')
+        .select('*')
+        .eq('auth_user_id', userId);
+
+      const results = [
+        {
+          table_name: 'account_types',
+          operation: 'SELECT',
+          can_access: !accountError,
+          error_message: accountError?.message || null
+        },
+        {
+          table_name: 'company_profiles',
+          operation: 'SELECT', 
+          can_access: !profileError,
+          error_message: profileError?.message || null
+        }
+      ];
 
       return {
         success: true,
@@ -107,45 +132,45 @@ export class ClientAccountDiagnostics {
     };
 
     try {
-      // Run comprehensive diagnostic
+      // Run comprehensive diagnostic using our cleaned up system
       const diagResult = await this.runComprehensiveDiagnostic(userId);
       
       if (diagResult.success && diagResult.data) {
         const data = diagResult.data;
         diagnostic.userExists = data.user_exists;
-        diagnostic.hasAccountType = data.has_account_type;
+        diagnostic.hasAccountType = data.account_type_exists;
         diagnostic.accountType = data.account_type;
-        diagnostic.hasCompanyProfile = data.has_company_profile;
-        diagnostic.isClientVerified = data.is_client_account_result;
+        diagnostic.hasCompanyProfile = data.company_profile_exists;
+        diagnostic.isClientVerified = data.is_client_account;
         diagnostic.rawData = data;
 
-        // Analyze issues
+        // Analyze issues with our simplified system
         if (!diagnostic.userExists) {
           diagnostic.issues.push('User does not exist in auth system');
         }
 
         if (!diagnostic.hasAccountType) {
           diagnostic.issues.push('User lacks account type assignment');
-          diagnostic.recommendations.push('Run account type assignment');
+          diagnostic.recommendations.push('Run client account creation');
         }
 
         if (diagnostic.accountType !== 'client') {
           diagnostic.issues.push(`Account type is '${diagnostic.accountType}', expected 'client'`);
-          diagnostic.recommendations.push('Update account type to client');
+          diagnostic.recommendations.push('Run client account creation to fix account type');
         }
 
         if (!diagnostic.hasCompanyProfile) {
           diagnostic.issues.push('User lacks company profile');
-          diagnostic.recommendations.push('Create company profile');
+          diagnostic.recommendations.push('Create company profile using robust function');
         }
 
         if (!diagnostic.isClientVerified) {
           diagnostic.issues.push('Client account verification failed');
-          diagnostic.recommendations.push('Run client account creation');
+          diagnostic.recommendations.push('Run ensure_client_account_robust function');
         }
       } else {
-        diagnostic.issues.push('Diagnostic RPC call failed');
-        diagnostic.recommendations.push('Check database connectivity and RPC functions');
+        diagnostic.issues.push('Diagnostic check failed');
+        diagnostic.recommendations.push('Check database connectivity and user authentication');
       }
 
     } catch (error) {
@@ -161,11 +186,16 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Attempting to repair client account for user: ${userId}`);
       
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust' as any, {
+      // Use our cleaned up robust ensure function
+      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: userId,
-        company_name_param: userMetadata?.companyName || 'My Company',
-        first_name_param: userMetadata?.contactFirstName || 'User',
-        last_name_param: userMetadata?.contactLastName || ''
+        company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
+        first_name_param: userMetadata?.contactFirstName || 
+          userMetadata?.first_name ||
+          userMetadata?.full_name?.split(' ')[0] || 'User',
+        last_name_param: userMetadata?.contactLastName || 
+          userMetadata?.last_name ||
+          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
       });
 
       if (error) {
@@ -189,6 +219,72 @@ export class ClientAccountDiagnostics {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown repair error',
+        timestamp
+      };
+    }
+  }
+
+  static async testSimplifiedTrigger(userEmail: string): Promise<DiagnosticResult> {
+    const timestamp = new Date().toISOString();
+    
+    try {
+      console.log('Testing simplified client signup trigger...');
+      
+      // This would normally be done through Supabase auth, but we can check if our
+      // trigger logic is working by examining existing users
+      const { data: users, error } = await supabase.auth.admin.listUsers();
+      
+      if (error) {
+        return {
+          success: false,
+          error: `Auth admin access failed: ${error.message}`,
+          timestamp
+        };
+      }
+
+      const testUser = users.users.find(u => u.email === userEmail);
+      
+      if (!testUser) {
+        return {
+          success: false,
+          error: 'Test user not found',
+          timestamp
+        };
+      }
+
+      // Check if the trigger created the necessary records
+      const { data: accountType } = await supabase
+        .from('account_types')
+        .select('*')
+        .eq('auth_user_id', testUser.id)
+        .single();
+
+      const { data: companyProfile } = await supabase
+        .schema('client_workspace')
+        .from('company_profiles')
+        .select('*')
+        .eq('auth_user_id', testUser.id)
+        .single();
+
+      return {
+        success: true,
+        data: {
+          user_id: testUser.id,
+          email: testUser.email,
+          has_account_type: !!accountType,
+          account_type: accountType?.account_type,
+          has_company_profile: !!companyProfile,
+          company_name: companyProfile?.company_name,
+          trigger_working: !!accountType && !!companyProfile
+        },
+        timestamp
+      };
+      
+    } catch (error) {
+      console.error('Trigger test exception:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown trigger test error',
         timestamp
       };
     }

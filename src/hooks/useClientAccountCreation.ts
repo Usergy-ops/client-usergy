@@ -27,8 +27,8 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId, userMetadata);
       
-      // Use RPC call with proper typing
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust' as any, {
+      // Use the cleaned up robust ensure function
+      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
