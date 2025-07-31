@@ -40,33 +40,29 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
 
 export async function getIncompleteProfileFields(userId: string): Promise<string[]> {
   try {
-    // Get the current client data to identify missing fields
-    const { data: client, error } = await supabase
-      .from('client_workflow.clients')
-      .select('email, company_name, full_name')
-      .eq('auth_user_id', userId)
-      .single();
+    // Use is_client_account function to check if client exists, since we can't query the table directly
+    const { data: isClient, error: clientError } = await supabase.rpc('is_client_account', {
+      user_id_param: userId
+    });
 
-    if (error) {
-      console.error('Error fetching client data:', error);
+    if (clientError) {
+      console.error('Error checking client account:', clientError);
       return [];
     }
 
-    if (!client) {
+    if (!isClient) {
       return ['email', 'company_name'];
     }
 
-    const missingFields: string[] = [];
-    const requiredFields = ['email', 'company_name'];
+    // Check profile completion to determine missing fields
+    const completionCheck = await checkProfileCompletion(userId);
+    
+    if (!completionCheck.isComplete) {
+      // Return the basic required fields that might be missing
+      return ['company_name', 'email'];
+    }
 
-    requiredFields.forEach(field => {
-      const value = client[field as keyof typeof client];
-      if (!value || value === '') {
-        missingFields.push(field);
-      }
-    });
-
-    return missingFields;
+    return [];
   } catch (error) {
     console.error('Exception getting incomplete profile fields:', error);
     return [];
