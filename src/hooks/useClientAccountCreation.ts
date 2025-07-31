@@ -35,8 +35,8 @@ export function useClientAccountCreation() {
         throw new Error('User not found or authentication mismatch');
       }
 
-      // Use simplified account type assignment
-      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
+      // Use simplified client record creation
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata);
 
       if (result.success) {
         // Wait a moment and verify client status
@@ -44,14 +44,14 @@ export function useClientAccountCreation() {
         const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
         
         if (isClient) {
-          console.log('Client account created successfully');
+          console.log('Client record created successfully');
           setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
           return { success: true, result: { is_client_account: true } };
         } else {
-          throw new Error('Account type assigned but client verification failed');
+          throw new Error('Client record created but verification failed');
         }
       } else {
-        throw new Error(result.error || 'Account creation failed');
+        throw new Error(result.error || 'Client record creation failed');
       }
     } catch (error) {
       console.error('Client account creation failed:', error);

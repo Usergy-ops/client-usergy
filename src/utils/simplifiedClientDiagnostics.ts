@@ -11,8 +11,8 @@ interface SimplifiedDiagnosticResult {
 
 interface UserAccountStatus {
   userExists: boolean;
-  hasAccountType: boolean;
-  accountType: string | null;
+  hasClientRecord: boolean;
+  clientRecord: any;
   isAuthenticated: boolean;
   sessionValid: boolean;
   issues: string[];
@@ -26,20 +26,20 @@ export class SimplifiedClientDiagnostics {
     try {
       console.log(`Checking simplified user account status for: ${userId}`);
       
-      // Check if user exists and get their account type
-      const { data: accountType, error: accountError } = await supabase
-        .from('account_types')
-        .select('account_type')
+      // Check if user exists in client_workflow.clients
+      const { data: clientRecord, error: clientError } = await supabase
+        .from('client_workflow.clients')
+        .select('*')
         .eq('auth_user_id', userId)
         .single();
 
-      if (accountError && accountError.code !== 'PGRST116') {
-        console.error('Error checking account type:', accountError);
+      if (clientError && clientError.code !== 'PGRST116') {
+        console.error('Error checking client record:', clientError);
         return {
           success: false,
-          error: accountError.message,
+          error: clientError.message,
           timestamp,
-          source: 'account_type_check'
+          source: 'client_record_check'
         };
       }
 
@@ -48,8 +48,8 @@ export class SimplifiedClientDiagnostics {
       
       const status: UserAccountStatus = {
         userExists: !!session?.user,
-        hasAccountType: !!accountType,
-        accountType: accountType?.account_type || null,
+        hasClientRecord: !!clientRecord,
+        clientRecord: clientRecord || null,
         isAuthenticated: !!session?.user && session.user.id === userId,
         sessionValid: !!session && (!session.expires_at || session.expires_at > Date.now() / 1000),
         issues: [],
@@ -62,14 +62,9 @@ export class SimplifiedClientDiagnostics {
         status.recommendations.push('User needs to sign up or sign in');
       }
 
-      if (!status.hasAccountType) {
-        status.issues.push('User lacks account type assignment');
-        status.recommendations.push('Account type will be assigned automatically');
-      }
-
-      if (status.accountType !== 'client') {
-        status.issues.push(`Account type is '${status.accountType}', expected 'client'`);
-        status.recommendations.push('Account type assignment may need correction');
+      if (!status.hasClientRecord) {
+        status.issues.push('User lacks client record in client_workflow schema');
+        status.recommendations.push('Client record will be created automatically');
       }
 
       if (!status.sessionValid) {
@@ -97,86 +92,101 @@ export class SimplifiedClientDiagnostics {
 
   static async isClientAccount(userId: string): Promise<boolean> {
     try {
-      console.log(`Checking if user is client account: ${userId}`);
+      console.log(`Checking if user has client record: ${userId}`);
       
-      const { data: accountType, error } = await supabase
-        .from('account_types')
-        .select('account_type')
+      const { data: clientRecord, error } = await supabase
+        .from('client_workflow.clients')
+        .select('id')
         .eq('auth_user_id', userId)
         .single();
 
       if (error) {
-        console.error('Error checking client account status:', error);
+        console.error('Error checking client record status:', error);
         return false;
       }
 
-      const isClient = accountType?.account_type === 'client';
-      console.log(`User ${userId} is client account: ${isClient}`);
+      const isClient = !!clientRecord;
+      console.log(`User ${userId} has client record: ${isClient}`);
       return isClient;
 
     } catch (error) {
-      console.error('Exception checking client account status:', error);
+      console.error('Exception checking client record status:', error);
       return false;
     }
   }
 
-  static async ensureAccountType(userId: string, userEmail: string): Promise<SimplifiedDiagnosticResult> {
+  static async ensureClientRecord(userId: string, userEmail: string, additionalData: any = {}): Promise<SimplifiedDiagnosticResult> {
     const timestamp = new Date().toISOString();
     
     try {
-      console.log(`Ensuring account type for user: ${userId} (${userEmail})`);
+      console.log(`Ensuring client record for user: ${userId} (${userEmail})`);
       
-      // Check if account type already exists
-      const { data: existingType } = await supabase
-        .from('account_types')
-        .select('account_type')
+      // Check if client record already exists
+      const { data: existingRecord } = await supabase
+        .from('client_workflow.clients')
+        .select('*')
         .eq('auth_user_id', userId)
         .single();
 
-      if (existingType) {
-        console.log(`Account type already exists: ${existingType.account_type}`);
+      if (existingRecord) {
+        console.log(`Client record already exists:`, existingRecord);
         return {
           success: true,
           data: { 
-            account_type: existingType.account_type,
+            client_record: existingRecord,
             action: 'already_exists'
           },
           timestamp,
-          source: 'account_type_exists'
+          source: 'client_record_exists'
         };
       }
 
-      // Use the existing assign_account_type_by_domain function
-      const result = await supabase.rpc('assign_account_type_by_domain', {
-        user_id_param: userId,
-        user_email: userEmail
-      });
+      // Create new client record
+      const clientData = {
+        auth_user_id: userId,
+        email: userEmail,
+        full_name: additionalData.full_name || additionalData.firstName && additionalData.lastName ? 
+          `${additionalData.firstName} ${additionalData.lastName}` : null,
+        company_name: additionalData.companyName || additionalData.company_name || null,
+        company_url: additionalData.company_url || null,
+        role: additionalData.role || null,
+        country: additionalData.country || null
+      };
 
-      if (result.error) {
-        console.error('Error assigning account type:', result.error);
+      const { data: newRecord, error: insertError } = await supabase
+        .from('client_workflow.clients')
+        .insert(clientData)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Error creating client record:', insertError);
         return {
           success: false,
-          error: result.error.message,
+          error: insertError.message,
           timestamp,
-          source: 'account_type_assignment_failed'
+          source: 'client_record_creation_failed'
         };
       }
 
-      console.log('Account type assigned successfully:', result.data);
+      console.log('Client record created successfully:', newRecord);
       return {
         success: true,
-        data: result.data,
+        data: {
+          client_record: newRecord,
+          action: 'created'
+        },
         timestamp,
-        source: 'account_type_assigned'
+        source: 'client_record_created'
       };
 
     } catch (error) {
-      console.error('Exception ensuring account type:', error);
+      console.error('Exception ensuring client record:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp,
-        source: 'ensure_account_type_exception'
+        source: 'ensure_client_record_exception'
       };
     }
   }

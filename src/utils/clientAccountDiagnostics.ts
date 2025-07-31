@@ -12,16 +12,14 @@ interface DiagnosticResult {
 interface ComprehensiveDiagnostic {
   userId: string;
   userExists: boolean;
-  hasAccountType: boolean;
-  accountType: string | null;
-  hasCompanyProfile: boolean;
+  hasClientRecord: boolean;
+  clientRecord: any;
   isClientVerified: boolean;
   issues: string[];
   recommendations: string[];
   rawData: {
     user?: any;
-    accountType?: any;
-    companyProfile?: any;
+    clientRecord?: any;
   };
 }
 
@@ -41,11 +39,9 @@ export class ClientAccountDiagnostics {
           data: {
             ...result.data,
             user_exists: result.data?.userExists || false,
-            account_type_exists: result.data?.hasAccountType || false,
-            account_type: result.data?.accountType || null,
-            is_client_account: result.data?.accountType === 'client',
-            // Legacy fields for compatibility
-            company_profile_exists: false, // Not applicable in simplified mode
+            has_client_record: result.data?.hasClientRecord || false,
+            client_record: result.data?.clientRecord || null,
+            is_client_account: result.data?.hasClientRecord || false,
             session_valid: result.data?.sessionValid || false
           },
           timestamp
@@ -69,28 +65,28 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Testing RLS policies for user: ${userId}`);
       
-      // Test basic account_types access
-      const { data: accountTypes, error: accountError } = await supabase
-        .from('account_types')
+      // Test basic client_workflow.clients access
+      const { data: clients, error: clientError } = await supabase
+        .from('client_workflow.clients')
         .select('*')
         .eq('auth_user_id', userId);
 
-      if (accountError) {
-        console.error('Account types RLS test failed:', accountError);
+      if (clientError) {
+        console.error('Client workflow RLS test failed:', clientError);
         return {
           success: false,
-          error: accountError.message,
+          error: clientError.message,
           timestamp
         };
       }
 
       const results = [
         {
-          table_name: 'account_types',
+          table_name: 'client_workflow.clients',
           operation: 'SELECT',
-          can_access: !accountError,
-          error_message: accountError?.message || null,
-          record_count: accountTypes?.length || 0
+          can_access: !clientError,
+          error_message: clientError?.message || null,
+          record_count: clients?.length || 0
         }
       ];
 
@@ -113,9 +109,8 @@ export class ClientAccountDiagnostics {
     const diagnostic: ComprehensiveDiagnostic = {
       userId,
       userExists: false,
-      hasAccountType: false,
-      accountType: null,
-      hasCompanyProfile: false,
+      hasClientRecord: false,
+      clientRecord: null,
       isClientVerified: false,
       issues: [],
       recommendations: [],
@@ -128,9 +123,8 @@ export class ClientAccountDiagnostics {
       if (diagResult.success && diagResult.data) {
         const data = diagResult.data;
         diagnostic.userExists = data.user_exists;
-        diagnostic.hasAccountType = data.account_type_exists;
-        diagnostic.accountType = data.account_type;
-        diagnostic.hasCompanyProfile = false; // Not applicable in simplified mode
+        diagnostic.hasClientRecord = data.has_client_record;
+        diagnostic.clientRecord = data.client_record;
         diagnostic.isClientVerified = data.is_client_account;
         diagnostic.rawData = data;
 
@@ -139,19 +133,14 @@ export class ClientAccountDiagnostics {
           diagnostic.issues.push('User does not exist in auth system');
         }
 
-        if (!diagnostic.hasAccountType) {
-          diagnostic.issues.push('User lacks account type assignment');
-          diagnostic.recommendations.push('Account type will be assigned automatically');
-        }
-
-        if (diagnostic.accountType !== 'client') {
-          diagnostic.issues.push(`Account type is '${diagnostic.accountType}', expected 'client'`);
-          diagnostic.recommendations.push('Account type assignment may need correction');
+        if (!diagnostic.hasClientRecord) {
+          diagnostic.issues.push('User lacks client record in client_workflow schema');
+          diagnostic.recommendations.push('Client record will be created automatically');
         }
 
         if (!diagnostic.isClientVerified) {
           diagnostic.issues.push('Client account verification failed');
-          diagnostic.recommendations.push('Ensure proper account type assignment');
+          diagnostic.recommendations.push('Ensure proper client record creation');
         }
       } else {
         diagnostic.issues.push('Diagnostic check failed');
@@ -182,8 +171,8 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      // Use simplified account type assignment
-      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
+      // Use simplified client record creation
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata || {});
       
       return {
         success: result.success,
@@ -218,9 +207,9 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      // Check if the user has the expected setup
-      const { data: accountType } = await supabase
-        .from('account_types')
+      // Check if the user has the expected client record
+      const { data: clientRecord } = await supabase
+        .from('client_workflow.clients')
         .select('*')
         .eq('auth_user_id', user.id)
         .single();
@@ -230,10 +219,10 @@ export class ClientAccountDiagnostics {
         data: {
           user_id: user.id,
           email: user.email,
-          has_account_type: !!accountType,
-          account_type: accountType?.account_type,
+          has_client_record: !!clientRecord,
+          client_record: clientRecord,
           simplified_mode: true,
-          trigger_working: !!accountType
+          setup_working: !!clientRecord
         },
         timestamp
       };
@@ -246,5 +235,10 @@ export class ClientAccountDiagnostics {
         timestamp
       };
     }
+  }
+
+  // Legacy compatibility method
+  static async isClientAccount(userId: string): Promise<boolean> {
+    return await SimplifiedClientDiagnostics.isClientAccount(userId);
   }
 }

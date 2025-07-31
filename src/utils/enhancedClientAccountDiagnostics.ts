@@ -92,22 +92,21 @@ export class EnhancedClientAccountDiagnostics {
         };
       }
 
-      // Check for account type assignments
+      // Check for client records in the new schema
       try {
-        const { data: accountTypes, error: accountError } = await supabase
-          .from('account_types')
-          .select('*')
-          .eq('account_type', 'client');
+        const { data: clientRecords, error: clientError } = await supabase
+          .from('client_workflow.clients')
+          .select('*');
 
-        if (accountError) {
-          diagnostic.checks.account_types = { error: accountError.message };
+        if (clientError) {
+          diagnostic.checks.client_records = { error: clientError.message };
         } else {
-          diagnostic.checks.account_types = {
-            total_client_accounts: accountTypes?.length || 0
+          diagnostic.checks.client_records = {
+            total_client_records: clientRecords?.length || 0
           };
         }
       } catch (error) {
-        diagnostic.checks.account_types = { error: error instanceof Error ? error.message : 'Unknown error' };
+        diagnostic.checks.client_records = { error: error instanceof Error ? error.message : 'Unknown error' };
       }
 
       return {
@@ -134,16 +133,16 @@ export class EnhancedClientAccountDiagnostics {
     try {
       console.log('Testing enhanced edge function health...');
       
-      // Since we're using simplified approach, just test basic connectivity
+      // Test basic connectivity to the new client_workflow schema
       const { data: testResult, error } = await supabase
-        .from('error_logs')
+        .from('client_workflow.clients')
         .select('id')
         .limit(1);
 
       if (error) {
         return {
           success: false,
-          error: `Database connectivity test failed: ${error.message}`,
+          error: `Client workflow connectivity test failed: ${error.message}`,
           timestamp,
           source: 'connectivity_test_failed'
         };
@@ -152,9 +151,9 @@ export class EnhancedClientAccountDiagnostics {
       return {
         success: true,
         data: {
-          database_accessible: true,
+          client_workflow_accessible: true,
           simplified_mode: true,
-          message: 'Using simplified client diagnostics'
+          message: 'Using simplified client diagnostics with client_workflow schema'
         },
         timestamp,
         source: 'simplified_health_check'

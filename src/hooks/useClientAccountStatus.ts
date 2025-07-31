@@ -55,11 +55,11 @@ export function useClientAccountStatus() {
         return false;
       }
 
-      // Use simplified account type assignment
-      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
+      // Use simplified client record creation
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata);
       
       if (result.success) {
-        console.log('Client account ensured successfully:', result);
+        console.log('Client record ensured successfully:', result);
         return await checkAccountStatus(userId);
       }
 
