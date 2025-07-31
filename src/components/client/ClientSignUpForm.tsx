@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { AlertTriangle, CheckCircle, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { OTPVerification } from './OTPVerification';
+import { StreamlinedOTPVerification } from './StreamlinedOTPVerification';
 import { SignupProgressIndicator } from './SignupProgressIndicator';
 
 interface SignUpForm {
@@ -16,7 +16,6 @@ interface SignUpForm {
   contactLastName: string;
   email: string;
   password: string;
-  confirmPassword?: string;
 }
 
 type View = 'signup-form' | 'otp-verification';
@@ -45,7 +44,6 @@ export function ClientSignUpForm() {
   const [currentView, setCurrentView] = useState<View>('signup-form');
   const [signupStatus, setSignupStatus] = useState<SignupStatus>('idle');
   const [emailSent, setEmailSent] = useState<boolean>(false);
-  const [retryCount, setRetryCount] = useState<number>(0);
 
   const updateFormData = (field: keyof SignUpForm, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -76,21 +74,11 @@ export function ClientSignUpForm() {
     
     if (!validateForm()) return;
     
-    await performSignup();
-  };
-
-  const performSignup = async (isRetry = false) => {
-    if (isRetry) {
-      setRetryCount(prev => prev + 1);
-    } else {
-      setRetryCount(0);
-    }
-
     setSignupStatus('creating');
     setError('');
 
     try {
-      console.log('Starting client sign up process via edge function...');
+      console.log('Starting streamlined client sign up process...');
       
       const { data, error: signUpError } = await supabase.functions.invoke('client-auth-handler/signup', {
         body: {
@@ -103,13 +91,11 @@ export function ClientSignUpForm() {
       });
 
       if (signUpError) {
-        console.error('Edge function signup error:', signUpError);
+        console.error('Sign up error:', signUpError);
         setSignupStatus('error');
         
-        if (signUpError.message?.includes('already exists') || signUpError.message?.includes('already registered')) {
+        if (signUpError.message?.includes('already exists')) {
           setError('An account with this email already exists. Please sign in instead.');
-        } else if (signUpError.message?.includes('Password')) {
-          setError('Password must be at least 8 characters long and contain both letters and numbers.');
         } else {
           setError(`Sign up failed: ${signUpError.message}`);
         }
@@ -117,7 +103,7 @@ export function ClientSignUpForm() {
       }
 
       if (data?.error) {
-        console.error('Edge function returned error:', data.error);
+        console.error('Sign up response error:', data.error);
         setSignupStatus('error');
         
         if (data.error.includes('already exists')) {
@@ -129,70 +115,42 @@ export function ClientSignUpForm() {
       }
 
       if (data?.success) {
-        console.log('Sign up successful via edge function:', data);
+        console.log('Sign up successful:', data);
         setSignupStatus('sending-email');
         
-        // Simulate email sending delay for better UX
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        setSignupStatus('success');
-        setEmailSent(data.emailSent || false);
-        
-        // Show success for a moment before transitioning to OTP
+        // Brief delay for better UX
         setTimeout(() => {
-          setCurrentView('otp-verification');
-        }, 1500);
+          setSignupStatus('success');
+          setEmailSent(data.emailSent || false);
+          
+          // Transition to OTP verification
+          setTimeout(() => {
+            setCurrentView('otp-verification');
+          }, 1000);
+        }, 1000);
       } else {
-        console.error('Unexpected response from edge function:', data);
+        console.error('Unexpected response:', data);
         setSignupStatus('error');
         setError('Sign up failed. Please try again.');
       }
       
     } catch (error) {
-      console.error('Sign up error:', error);
+      console.error('Sign up exception:', error);
       setSignupStatus('error');
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
-          setError('Network error. Please check your connection and try again.');
-        } else {
-          setError(`Sign up failed: ${error.message}`);
-        }
-      } else {
-        setError('An unexpected error occurred. Please try again.');
-      }
+      setError('An unexpected error occurred. Please try again.');
     }
-  };
-
-  const handleRetry = () => {
-    performSignup(true);
   };
 
   if (currentView === 'otp-verification') {
     return (
-      <div className="space-y-6">
-        <div className="text-center space-y-2">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-foreground">Account Created Successfully!</h2>
-          <p className="text-muted-foreground">
-            {emailSent 
-              ? "We've sent a verification code to your email address."
-              : "Please enter the verification code to complete your registration."
-            }
-          </p>
-        </div>
-        
-        <OTPVerification
-          email={formData.email}
-          password={formData.password}
-          onSuccess={() => {
-            console.log('OTP verification successful');
-          }}
-          onBack={() => setCurrentView('signup-form')}
-        />
-      </div>
+      <StreamlinedOTPVerification
+        email={formData.email}
+        password={formData.password}
+        onSuccess={() => {
+          console.log('OTP verification successful');
+        }}
+        onBack={() => setCurrentView('signup-form')}
+      />
     );
   }
 
@@ -218,23 +176,6 @@ export function ClientSignUpForm() {
             <div className="flex-1">
               <p className="text-sm text-destructive font-medium">Error</p>
               <p className="text-sm text-destructive mt-1">{error}</p>
-              {retryCount > 0 && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Retry attempt: {retryCount}
-                </p>
-              )}
-              {(error.includes('network') || error.includes('unexpected error')) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRetry}
-                  className="mt-3"
-                  disabled={signupStatus === 'creating'}
-                >
-                  Try Again
-                </Button>
-              )}
             </div>
           </div>
         </div>

@@ -7,9 +7,17 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-    storageKey: 'usergy-client-auth'
+    storageKey: 'usergy-client-auth',
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'usergy-client-portal'
+    }
   }
 });
+
+// Helper function to check if we're in a browser environment
+export const isBrowser = typeof window !== 'undefined';
