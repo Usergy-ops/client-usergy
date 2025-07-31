@@ -31,7 +31,6 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Running comprehensive diagnostic for user: ${userId}`);
       
-      // Use the simplified diagnostic approach since we cleaned up the triggers
       const { data: result, error } = await supabase.rpc('get_client_account_status', {
         user_id_param: userId
       });
@@ -81,25 +80,14 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      // Test company_profiles access in client_workspace schema
-      const { data: profiles, error: profileError } = await supabase
-        .schema('client_workspace')
-        .from('company_profiles')
-        .select('*')
-        .eq('auth_user_id', userId);
-
+      // Test company_profiles access - note: we can't use .schema() in the client
+      // We'll need to create a view or function for this if needed
       const results = [
         {
           table_name: 'account_types',
           operation: 'SELECT',
           can_access: !accountError,
           error_message: accountError?.message || null
-        },
-        {
-          table_name: 'company_profiles',
-          operation: 'SELECT', 
-          can_access: !profileError,
-          error_message: profileError?.message || null
         }
       ];
 
@@ -132,7 +120,6 @@ export class ClientAccountDiagnostics {
     };
 
     try {
-      // Run comprehensive diagnostic using our cleaned up system
       const diagResult = await this.runComprehensiveDiagnostic(userId);
       
       if (diagResult.success && diagResult.data) {
@@ -144,7 +131,7 @@ export class ClientAccountDiagnostics {
         diagnostic.isClientVerified = data.is_client_account;
         diagnostic.rawData = data;
 
-        // Analyze issues with our simplified system
+        // Analyze issues
         if (!diagnostic.userExists) {
           diagnostic.issues.push('User does not exist in auth system');
         }
@@ -186,8 +173,7 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Attempting to repair client account for user: ${userId}`);
       
-      // Use our cleaned up robust ensure function
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+      const { data: rawResult, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -207,11 +193,12 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      const typedResult = result as any;
+      // Type guard for the result
+      const result = rawResult as unknown as any;
       return {
-        success: typedResult?.success || false,
-        data: result,
-        error: typedResult?.error,
+        success: result?.success || false,
+        data: rawResult,
+        error: result?.error,
         timestamp
       };
     } catch (error) {
@@ -230,24 +217,14 @@ export class ClientAccountDiagnostics {
     try {
       console.log('Testing simplified client signup trigger...');
       
-      // This would normally be done through Supabase auth, but we can check if our
-      // trigger logic is working by examining existing users
-      const { data: users, error } = await supabase.auth.admin.listUsers();
+      // This diagnostic function is simplified since we can't access auth.admin from client
+      // Instead, we'll check if the current user has the expected setup
+      const { data: { user } } = await supabase.auth.getUser();
       
-      if (error) {
+      if (!user || user.email !== userEmail) {
         return {
           success: false,
-          error: `Auth admin access failed: ${error.message}`,
-          timestamp
-        };
-      }
-
-      const testUser = users.users.find(u => u.email === userEmail);
-      
-      if (!testUser) {
-        return {
-          success: false,
-          error: 'Test user not found',
+          error: 'User not found or email mismatch',
           timestamp
         };
       }
@@ -256,26 +233,17 @@ export class ClientAccountDiagnostics {
       const { data: accountType } = await supabase
         .from('account_types')
         .select('*')
-        .eq('auth_user_id', testUser.id)
-        .single();
-
-      const { data: companyProfile } = await supabase
-        .schema('client_workspace')
-        .from('company_profiles')
-        .select('*')
-        .eq('auth_user_id', testUser.id)
+        .eq('auth_user_id', user.id)
         .single();
 
       return {
         success: true,
         data: {
-          user_id: testUser.id,
-          email: testUser.email,
+          user_id: user.id,
+          email: user.email,
           has_account_type: !!accountType,
           account_type: accountType?.account_type,
-          has_company_profile: !!companyProfile,
-          company_name: companyProfile?.company_name,
-          trigger_working: !!accountType && !!companyProfile
+          trigger_working: !!accountType
         },
         timestamp
       };

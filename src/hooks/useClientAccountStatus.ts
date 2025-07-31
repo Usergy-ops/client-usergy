@@ -27,7 +27,6 @@ export function useClientAccountStatus() {
     try {
       console.log('Checking client account status for user:', userId);
       
-      // Use the cleaned up is_client_account function
       const { data: isClient, error } = await supabase.rpc('is_client_account', {
         user_id_param: userId
       });
@@ -64,8 +63,7 @@ export function useClientAccountStatus() {
     console.log('Ensuring client account exists for user:', userId, userMetadata);
 
     try {
-      // Use the cleaned up robust ensure function
-      const { data: result, error } = await supabase.rpc('ensure_client_account_robust', {
+      const { data: rawResult, error } = await supabase.rpc('ensure_client_account_robust', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
         first_name_param: userMetadata?.contactFirstName || 
@@ -81,10 +79,13 @@ export function useClientAccountStatus() {
         return false;
       }
 
-      const typedResult = result as CreateClientAccountResult;
-      if (typedResult?.success && typedResult?.is_client_account) {
-        console.log('Client account ensured successfully:', typedResult);
-        return await checkAccountStatus(userId);
+      // Type guard to ensure we have the right structure
+      const result = rawResult as unknown as CreateClientAccountResult;
+      if (result && typeof result === 'object' && 'success' in result) {
+        if (result.success && result.is_client_account) {
+          console.log('Client account ensured successfully:', result);
+          return await checkAccountStatus(userId);
+        }
       }
 
       return false;
