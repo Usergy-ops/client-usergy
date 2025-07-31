@@ -169,7 +169,12 @@ export default function Welcome() {
 
                 {/* Form Content */}
                 <div className="space-y-6">
-                  {authMode === 'signup' && <SimpleClientSignUpForm onSuccess={handleSignUpSuccess} />}
+                  {authMode === 'signup' && (
+                    <SimpleClientSignUpForm 
+                      onSuccess={handleSignUpSuccess} 
+                      onSwitchToSignIn={() => setAuthMode('signin')} 
+                    />
+                  )}
                   {authMode === 'signin' && <ClientSignInForm onForgotPassword={() => setAuthMode('reset')} />}
                   {authMode === 'reset' && <ClientPasswordResetForm onBack={() => setAuthMode('signin')} />}
                   {authMode === 'otp-verification' && (
