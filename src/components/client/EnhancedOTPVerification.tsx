@@ -64,7 +64,7 @@ export function EnhancedOTPVerification({ email, password, onSuccess, onBack }: 
         });
 
         await new Promise(resolve => setTimeout(resolve, 1500));
-        navigate('/client/dashboard', { replace: true });
+        navigate('/dashboard', { replace: true });
         
       } else {
         await logOTPError(

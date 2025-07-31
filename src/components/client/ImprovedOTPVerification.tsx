@@ -55,7 +55,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
         
         // Wait a moment for the success animation
         setTimeout(() => {
-          navigate('/client/profile');
+          navigate('/dashboard');
         }, 1500);
       } else {
         setError(result.error || 'Invalid verification code. Please try again.');

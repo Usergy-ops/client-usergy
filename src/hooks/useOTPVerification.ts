@@ -18,8 +18,11 @@ export function useOTPVerification() {
     setError('');
 
     try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: { email, otpCode, password }
+      // Use the standard Supabase auth verifyOtp method for email verification
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: otpCode,
+        type: 'signup'
       });
 
       if (error) {
@@ -27,12 +30,12 @@ export function useOTPVerification() {
         return { success: false, error: { message: 'Verification failed' } };
       }
 
-      if (data?.success) {
+      if (data.session) {
         return { success: true, data };
       }
 
-      setError(data?.error || 'Invalid verification code');
-      return { success: false, error: { message: data?.error || 'Invalid verification code' } };
+      setError('Invalid verification code');
+      return { success: false, error: { message: 'Invalid verification code' } };
     } catch (error) {
       console.error('OTP verification error:', error);
       setError('Verification failed. Please try again.');
@@ -47,8 +50,10 @@ export function useOTPVerification() {
     setError('');
 
     try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
-        body: { email }
+      // Use the standard Supabase auth resend method
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: email
       });
 
       if (error) {
@@ -56,12 +61,7 @@ export function useOTPVerification() {
         return { success: false, error: { message: 'Failed to resend code' } };
       }
 
-      if (data?.success) {
-        return { success: true, data };
-      }
-
-      setError(data?.error || 'Failed to resend code');
-      return { success: false, error: { message: data?.error || 'Failed to resend code' } };
+      return { success: true, data: { message: 'Code resent successfully' } };
     } catch (error) {
       console.error('OTP resend error:', error);
       setError('Failed to resend code. Please try again.');

@@ -22,6 +22,7 @@ interface CompanyProfile {
   companyCity: string;
   companyTimezone: string;
   companyLogo?: File;
+  fullName: string;
 }
 
 const industries = [
@@ -92,6 +93,7 @@ export default function ProfileSetup() {
     companyCountry: '',
     companyCity: '',
     companyTimezone: '',
+    fullName: ''
   });
 
   const updateFormData = (field: keyof CompanyProfile, value: string | File) => {
@@ -145,7 +147,7 @@ export default function ProfileSetup() {
     e.preventDefault();
     
     // Validate required fields
-    const requiredFields = ['companyName', 'industry', 'companySize', 'contactRole', 'companyCountry', 'companyCity', 'companyTimezone'];
+    const requiredFields = ['companyName', 'industry', 'companySize', 'contactRole', 'companyCountry', 'companyCity', 'companyTimezone', 'fullName'];
     const missingFields = requiredFields.filter(field => !formData[field as keyof CompanyProfile]);
     
     if (missingFields.length > 0) {
@@ -161,22 +163,27 @@ export default function ProfileSetup() {
         logoUrl = await uploadLogo(formData.companyLogo);
       }
 
+      // Update the client record in client_workflow.clients
       const { error } = await supabase
-        .from('client_workspace.company_profiles')
-        .upsert({
-          auth_user_id: user?.id,
+        .from('client_workflow.clients')
+        .update({
           company_name: formData.companyName,
-          company_website: formData.websiteUrl || null,
-          industry: formData.industry,
-          company_size: formData.companySize,
-          contact_role: formData.contactRole,
-          contact_phone: formData.contactPhone || null,
-          company_country: formData.companyCountry,
-          company_city: formData.companyCity,
-          company_timezone: formData.companyTimezone,
-          company_logo_url: logoUrl,
-          onboarding_status: 'completed'
-        });
+          full_name: formData.fullName,
+          // Store additional metadata as JSON for now
+          metadata: {
+            company_website: formData.websiteUrl || null,
+            industry: formData.industry,
+            company_size: formData.companySize,
+            contact_role: formData.contactRole,
+            contact_phone: formData.contactPhone || null,
+            company_country: formData.companyCountry,
+            company_city: formData.companyCity,
+            company_timezone: formData.companyTimezone,
+            company_logo_url: logoUrl,
+            onboarding_status: 'completed'
+          }
+        })
+        .eq('auth_user_id', user?.id);
 
       if (error) throw error;
 
@@ -211,6 +218,28 @@ export default function ProfileSetup() {
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
+
+          {/* Personal Information */}
+          <div className="glass-card p-6 space-y-6 animate-in fade-in-0 slide-in-from-bottom-2">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Building className="h-5 w-5 text-primary" />
+              Personal Information
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="fullName">Full Name *</Label>
+                <Input
+                  id="fullName"
+                  value={formData.fullName}
+                  onChange={(e) => updateFormData('fullName', e.target.value)}
+                  placeholder="John Smith"
+                  className="usergy-input"
+                  required
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Company Information */}
           <div className="glass-card p-6 space-y-6 animate-in fade-in-0 slide-in-from-bottom-2">

@@ -11,7 +11,7 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
   try {
     console.log('Checking profile completion for user:', userId);
     
-    // Call the database function to check if basic client record exists
+    // Call the updated database function to check if basic client record exists
     const { data, error } = await supabase.rpc('is_profile_complete', {
       user_id_param: userId
     });

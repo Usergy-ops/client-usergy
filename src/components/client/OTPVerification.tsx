@@ -66,7 +66,7 @@ export function OTPVerification({ email, password, onSuccess, onBack }: OTPVerif
         // The backend trigger automatically creates client account
         // Just wait a moment and navigate
         setTimeout(() => {
-          navigate('/client/dashboard', { replace: true });
+          navigate('/dashboard', { replace: true });
           onSuccess();
         }, 1500);
         
