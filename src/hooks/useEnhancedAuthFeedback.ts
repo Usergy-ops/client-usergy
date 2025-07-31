@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 
 interface EnhancedAuthFeedback {
   showFeedback: (type: 'success' | 'error' | 'info' | 'warning', title: string, description?: string, diagnostic?: any) => void;
@@ -59,10 +60,11 @@ export function useEnhancedAuthFeedback(): EnhancedAuthFeedback {
       title,
       description,
       variant: 'destructive',
-      action: {
-        altText: 'Retry',
-        onClick: onRetry,
-      },
+      action: (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      ),
     });
   }, [toast]);
 
