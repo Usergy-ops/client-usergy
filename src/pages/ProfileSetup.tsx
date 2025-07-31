@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -209,10 +210,10 @@ export default function ProfileSetup() {
         throw error;
       }
 
-      // Type assertion and validation for the response
-      const response = data as ProfileSaveResponse;
+      // Properly handle the response type by converting to unknown first
+      const response = data as unknown as ProfileSaveResponse;
       
-      if (response && typeof response === 'object' && 'success' in response) {
+      if (response && typeof response === 'object' && response !== null && 'success' in response) {
         if (!response.success) {
           console.error('Profile save failed:', response.error);
           throw new Error(response.error || 'Failed to save profile');
