@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { supabase } from '@/lib/supabase';
+import { checkProfileCompletion } from '@/utils/profileValidation';
 
 export default function AuthCallback() {
   const [searchParams] = useSearchParams();
@@ -22,17 +23,28 @@ export default function AuthCallback() {
           return;
         }
 
-        if (data.session) {
+        if (data.session && data.session.user) {
           setStatus('success');
           
-          // Give the context time to update
-          setTimeout(() => {
-            if (isClientAccount) {
-              navigate('/client/dashboard', { replace: true });
-            } else {
+          // Check if user is a client account and profile completion
+          if (isClientAccount) {
+            try {
+              const profileCheck = await checkProfileCompletion(data.session.user.id);
+              
+              if (profileCheck.isComplete) {
+                navigate('/client/dashboard', { replace: true });
+              } else {
+                navigate('/client/profile', { replace: true });
+              }
+            } catch (error) {
+              console.error('Profile check error during callback:', error);
+              // Default to profile setup if check fails
               navigate('/client/profile', { replace: true });
             }
-          }, 1000);
+          } else {
+            // If not a client account, redirect to profile setup
+            navigate('/client/profile', { replace: true });
+          }
         } else {
           console.log('No session found in auth callback');
           navigate('/', { replace: true });

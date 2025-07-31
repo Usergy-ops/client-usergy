@@ -2,7 +2,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Navigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
+import { checkProfileCompletion } from '@/utils/profileValidation';
 
 interface EnhancedClientProtectedRouteProps {
   children: ReactNode;
@@ -12,6 +12,7 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
   const { user, session, loading, isClientAccount } = useClientAuth();
   const [isProfileComplete, setIsProfileComplete] = useState(false);
   const [checkingProfile, setCheckingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkProfileCompletion = async () => {
@@ -23,20 +24,19 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
       try {
         console.log('Checking profile completion for user:', user.id);
         
-        // Use the new database function to check profile completeness
-        const { data, error } = await supabase.rpc('is_profile_complete', {
-          user_id_param: user.id
-        });
-
-        if (error) {
-          console.error('Error checking profile completion:', error);
+        const result = await checkProfileCompletion(user.id);
+        
+        if (result.error) {
+          console.error('Profile completion check error:', result.error);
+          setProfileError(result.error);
           setIsProfileComplete(false);
         } else {
-          console.log('Profile completion check result:', data);
-          setIsProfileComplete(data === true);
+          console.log('Profile completion check result:', result.isComplete);
+          setIsProfileComplete(result.isComplete);
         }
       } catch (error) {
         console.error('Exception in profile completion check:', error);
+        setProfileError('Failed to check profile completion');
         setIsProfileComplete(false);
       } finally {
         setCheckingProfile(false);
@@ -88,6 +88,9 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
   // Check if profile is complete
   if (!isProfileComplete) {
     console.log('EnhancedClientProtectedRoute: Profile incomplete, redirecting to profile setup');
+    if (profileError) {
+      console.log('Profile check error:', profileError);
+    }
     return <Navigate to="/profile" replace />;
   }
 
