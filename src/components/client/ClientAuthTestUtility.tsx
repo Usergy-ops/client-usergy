@@ -253,7 +253,7 @@ export function ClientAuthTestUtility() {
 
   const getStatusBadgeVariant = (status: TestResult['status']) => {
     switch (status) {
-      case 'success': return 'success' as const;
+      case 'success': return 'default' as const; // Changed from 'success' to 'default'
       case 'error': return 'destructive' as const;
       case 'warning': return 'secondary' as const;
       case 'pending': return 'outline' as const;

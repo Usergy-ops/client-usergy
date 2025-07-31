@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +9,7 @@ import { useErrorLogger } from '@/hooks/useErrorLogger';
 import { useNavigate } from 'react-router-dom';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { AuthStatusIndicator } from './AuthStatusIndicator';
+import { cn } from '@/lib/utils';
 
 interface OTPVerificationProps {
   email: string;
