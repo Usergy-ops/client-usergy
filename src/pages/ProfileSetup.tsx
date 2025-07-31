@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -23,6 +22,12 @@ interface CompanyProfile {
   companyTimezone: string;
   companyLogo?: File;
   fullName: string;
+}
+
+interface ProfileSaveResponse {
+  success: boolean;
+  error?: string;
+  message?: string;
 }
 
 const industries = [
@@ -204,9 +209,17 @@ export default function ProfileSetup() {
         throw error;
       }
 
-      if (data && !data.success) {
-        console.error('Profile save failed:', data.error);
-        throw new Error(data.error || 'Failed to save profile');
+      // Type assertion and validation for the response
+      const response = data as ProfileSaveResponse;
+      
+      if (response && typeof response === 'object' && 'success' in response) {
+        if (!response.success) {
+          console.error('Profile save failed:', response.error);
+          throw new Error(response.error || 'Failed to save profile');
+        }
+      } else {
+        // If response is not in expected format, assume success if no error was thrown
+        console.log('Profile save response (unexpected format):', data);
       }
 
       console.log('Client profile saved successfully:', data);
