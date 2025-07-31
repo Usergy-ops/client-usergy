@@ -1,5 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { SimplifiedClientDiagnostics } from './simplifiedClientDiagnostics';
 
 interface DiagnosticResult {
   success: boolean;
@@ -31,24 +32,27 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Running comprehensive diagnostic for user: ${userId}`);
       
-      const { data: result, error } = await supabase.rpc('get_client_account_status', {
-        user_id_param: userId
-      });
-
-      if (error) {
-        console.error('Diagnostic RPC failed:', error);
+      // Use simplified diagnostics
+      const result = await SimplifiedClientDiagnostics.checkUserAccountStatus(userId);
+      
+      if (result.success) {
         return {
-          success: false,
-          error: error.message,
+          success: true,
+          data: {
+            ...result.data,
+            user_exists: result.data?.userExists || false,
+            account_type_exists: result.data?.hasAccountType || false,
+            account_type: result.data?.accountType || null,
+            is_client_account: result.data?.accountType === 'client',
+            // Legacy fields for compatibility
+            company_profile_exists: false, // Not applicable in simplified mode
+            session_valid: result.data?.sessionValid || false
+          },
           timestamp
         };
+      } else {
+        return result;
       }
-
-      return {
-        success: true,
-        data: result,
-        timestamp
-      };
     } catch (error) {
       console.error('Diagnostic exception:', error);
       return {
@@ -80,14 +84,13 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      // Test company_profiles access - note: we can't use .schema() in the client
-      // We'll need to create a view or function for this if needed
       const results = [
         {
           table_name: 'account_types',
           operation: 'SELECT',
           can_access: !accountError,
-          error_message: accountError?.message || null
+          error_message: accountError?.message || null,
+          record_count: accountTypes?.length || 0
         }
       ];
 
@@ -127,7 +130,7 @@ export class ClientAccountDiagnostics {
         diagnostic.userExists = data.user_exists;
         diagnostic.hasAccountType = data.account_type_exists;
         diagnostic.accountType = data.account_type;
-        diagnostic.hasCompanyProfile = data.company_profile_exists;
+        diagnostic.hasCompanyProfile = false; // Not applicable in simplified mode
         diagnostic.isClientVerified = data.is_client_account;
         diagnostic.rawData = data;
 
@@ -138,22 +141,17 @@ export class ClientAccountDiagnostics {
 
         if (!diagnostic.hasAccountType) {
           diagnostic.issues.push('User lacks account type assignment');
-          diagnostic.recommendations.push('Run client account creation');
+          diagnostic.recommendations.push('Account type will be assigned automatically');
         }
 
         if (diagnostic.accountType !== 'client') {
           diagnostic.issues.push(`Account type is '${diagnostic.accountType}', expected 'client'`);
-          diagnostic.recommendations.push('Run client account creation to fix account type');
-        }
-
-        if (!diagnostic.hasCompanyProfile) {
-          diagnostic.issues.push('User lacks company profile');
-          diagnostic.recommendations.push('Create company profile using robust function');
+          diagnostic.recommendations.push('Account type assignment may need correction');
         }
 
         if (!diagnostic.isClientVerified) {
           diagnostic.issues.push('Client account verification failed');
-          diagnostic.recommendations.push('Run ensure_client_account_robust function');
+          diagnostic.recommendations.push('Ensure proper account type assignment');
         }
       } else {
         diagnostic.issues.push('Diagnostic check failed');
@@ -173,34 +171,27 @@ export class ClientAccountDiagnostics {
     try {
       console.log(`Attempting to repair client account for user: ${userId}`);
       
-      const { data: rawResult, error } = await supabase.rpc('ensure_client_account_robust', {
-        user_id_param: userId,
-        company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
-        first_name_param: userMetadata?.contactFirstName || 
-          userMetadata?.first_name ||
-          userMetadata?.full_name?.split(' ')[0] || 'User',
-        last_name_param: userMetadata?.contactLastName || 
-          userMetadata?.last_name ||
-          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
-      });
-
-      if (error) {
-        console.error('Account repair failed:', error);
+      // Get user info
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || user.id !== userId) {
         return {
           success: false,
-          error: error.message,
+          error: 'User not found or not authenticated',
           timestamp
         };
       }
 
-      // Type guard for the result
-      const result = rawResult as unknown as any;
+      // Use simplified account type assignment
+      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
+      
       return {
-        success: result?.success || false,
-        data: rawResult,
-        error: result?.error,
+        success: result.success,
+        data: result.data,
+        error: result.error,
         timestamp
       };
+
     } catch (error) {
       console.error('Repair exception:', error);
       return {
@@ -215,10 +206,8 @@ export class ClientAccountDiagnostics {
     const timestamp = new Date().toISOString();
     
     try {
-      console.log('Testing simplified client signup trigger...');
+      console.log('Testing simplified client setup...');
       
-      // This diagnostic function is simplified since we can't access auth.admin from client
-      // Instead, we'll check if the current user has the expected setup
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user || user.email !== userEmail) {
@@ -229,7 +218,7 @@ export class ClientAccountDiagnostics {
         };
       }
 
-      // Check if the trigger created the necessary records
+      // Check if the user has the expected setup
       const { data: accountType } = await supabase
         .from('account_types')
         .select('*')
@@ -243,16 +232,17 @@ export class ClientAccountDiagnostics {
           email: user.email,
           has_account_type: !!accountType,
           account_type: accountType?.account_type,
+          simplified_mode: true,
           trigger_working: !!accountType
         },
         timestamp
       };
       
     } catch (error) {
-      console.error('Trigger test exception:', error);
+      console.error('Simplified test exception:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown trigger test error',
+        error: error instanceof Error ? error.message : 'Unknown test error',
         timestamp
       };
     }

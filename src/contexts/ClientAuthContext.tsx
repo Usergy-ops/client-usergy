@@ -30,7 +30,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const initializingRef = useRef(false);
   const { logAuthError } = useErrorLogger();
 
-  // Enhanced account health check using new diagnostics
+  // Enhanced account health check using simplified diagnostics
   const getAccountHealth = useCallback(async (userId: string) => {
     console.log(`Getting account health for user: ${userId}`);
     
@@ -55,7 +55,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logAuthError]);
 
-  // Enhanced account repair function
+  // Simplified account repair function
   const repairAccount = useCallback(async (userId: string, userMetadata?: any): Promise<boolean> => {
     console.log(`Attempting to repair account for user: ${userId}`);
     
@@ -78,18 +78,18 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
-  // Enhanced diagnose account function using the comprehensive diagnostic
+  // Simplified diagnose account function
   const diagnoseAccount = useCallback(async (userId: string) => {
-    console.log(`Enhanced Diagnosing account for user: ${userId}`);
+    console.log(`Diagnosing account for user: ${userId}`);
     
     try {
       const diagnosticResult = await ClientAccountDiagnostics.runComprehensiveDiagnostic(userId);
       
       if (diagnosticResult.success) {
-        console.log('Enhanced account diagnosis result:', diagnosticResult.data);
+        console.log('Account diagnosis result:', diagnosticResult.data);
         return diagnosticResult.data;
       } else {
-        console.error('Enhanced diagnosis failed:', diagnosticResult.error);
+        console.error('Diagnosis failed:', diagnosticResult.error);
         return {
           user_exists: false,
           error: diagnosticResult.error,
@@ -97,8 +97,8 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         };
       }
     } catch (error) {
-      console.error('Enhanced account diagnosis failed:', error);
-      await logAuthError(error, 'diagnose_account_exception_enhanced');
+      console.error('Account diagnosis failed:', error);
+      await logAuthError(error, 'diagnose_account_exception_simplified');
       return {
         user_exists: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -107,61 +107,55 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   }, [logAuthError]);
 
-  // Enhanced wait for client account with better error handling and recovery
+  // Simplified wait for client account with better error handling
   const waitForClientAccount = useCallback(async (userId: string, maxAttempts = 10): Promise<boolean> => {
-    console.log(`Enhanced wait: Starting client account verification for user: ${userId}`);
+    console.log(`Simplified wait: Starting client account verification for user: ${userId}`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        console.log(`Enhanced wait: Attempt ${attempt}/${maxAttempts} - Checking client status...`);
+        console.log(`Simplified wait: Attempt ${attempt}/${maxAttempts} - Checking client status...`);
         
-        const { data: isClient, error } = await supabase.rpc('is_client_account', {
-          user_id_param: userId
-        });
+        // Use simplified client check
+        const isClient = await ClientAccountDiagnostics.isClientAccount(userId);
 
-        if (error) {
-          console.error(`Enhanced wait: Error on attempt ${attempt}:`, error);
-          await logAuthError(error, `enhanced_check_client_status_attempt_${attempt}`);
-          
-          // On final attempt, try to repair the account
-          if (attempt === maxAttempts) {
-            console.log('Final attempt failed, trying account repair...');
-            const repaired = await repairAccount(userId);
-            if (repaired) {
-              setIsClientAccount(true);
-              return true;
-            }
-            return false;
-          }
-        } else if (isClient) {
-          console.log(`Enhanced wait: SUCCESS! Client account confirmed on attempt ${attempt}`);
+        if (isClient) {
+          console.log(`Simplified wait: SUCCESS! Client account confirmed on attempt ${attempt}`);
           setIsClientAccount(true);
           return true;
         } else {
-          console.log(`Enhanced wait: Attempt ${attempt} - Not yet a client account, waiting...`);
+          console.log(`Simplified wait: Attempt ${attempt} - Not yet a client account, waiting...`);
+          
+          // On first few attempts, try to ensure account type is assigned
+          if (attempt <= 3) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email) {
+              console.log('Ensuring account type is assigned...');
+              await ClientAccountDiagnostics.repairClientAccount(userId);
+            }
+          }
         }
 
-        // Progressive delay with better timing
+        // Progressive delay
         if (attempt < maxAttempts) {
-          const delay = Math.min(1000 + (attempt * 500), 3000); // Start at 1.5s, max 3s
-          console.log(`Enhanced wait: Waiting ${delay}ms before next attempt...`);
+          const delay = Math.min(1000 + (attempt * 500), 3000);
+          console.log(`Simplified wait: Waiting ${delay}ms before next attempt...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       } catch (error) {
-        console.error(`Enhanced wait: Exception on attempt ${attempt}:`, error);
-        await logAuthError(error, `enhanced_check_client_status_exception_${attempt}`);
+        console.error(`Simplified wait: Exception on attempt ${attempt}:`, error);
+        await logAuthError(error, `simplified_check_client_status_exception_${attempt}`);
         
         if (attempt === maxAttempts) {
-          console.error('Enhanced wait: Final attempt failed with exception');
+          console.error('Simplified wait: Final attempt failed with exception');
           return false;
         }
       }
     }
 
-    console.log('Enhanced wait: All attempts exhausted - client account not confirmed');
+    console.log('Simplified wait: All attempts exhausted - client account not confirmed');
     setIsClientAccount(false);
     return false;
-  }, [logAuthError, repairAccount]);
+  }, [logAuthError]);
 
   // Enhanced session initialization
   const initializeAuth = useCallback(async () => {

@@ -2,6 +2,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useErrorLogger } from './useErrorLogger';
+import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface EnhancedClientAccountCreationState {
   isCreating: boolean;
@@ -38,57 +39,50 @@ export function useEnhancedClientAccountCreation() {
     try {
       console.log('Enhanced: Creating client account for user:', userId, userMetadata);
       
-      const { data: rawResult, error } = await supabase.functions.invoke('client-auth-handler/signup', {
-        body: {
-          email: userMetadata.email,
-          password: userMetadata.password,
-          companyName: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
-          firstName: userMetadata?.contactFirstName || 
-            userMetadata?.first_name ||
-            userMetadata?.full_name?.split(' ')[0] || 'User',
-          lastName: userMetadata?.contactLastName || 
-            userMetadata?.last_name ||
-            userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
-        }
-      });
-
-      if (error) {
-        console.error('Enhanced: Edge function call failed:', error);
-        await logAuthError(error, 'enhanced_client_account_creation');
-        
-        setState(prev => ({ 
-          ...prev, 
-          isCreating: false, 
-          error: `Account creation failed: ${error.message}`,
-          canRetry: true
-        }));
-        
-        return { success: false, error: error.message };
+      // Use simplified approach - just ensure account type
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || user.id !== userId) {
+        throw new Error('User not found or authentication mismatch');
       }
 
-      console.log('Enhanced: Account creation result:', rawResult);
-
-      const result = rawResult as CreateClientAccountResult;
+      // Use simplified diagnostics
+      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
       
       if (result.success) {
-        console.log('Enhanced: Client account created successfully');
-        setState(prev => ({ 
-          ...prev, 
-          isCreating: false, 
-          isComplete: true, 
-          diagnostic: result.diagnostic 
-        }));
-        return { success: true, result };
+        // Verify client status
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
+        
+        if (isClient) {
+          console.log('Enhanced: Client account created successfully');
+          setState(prev => ({ 
+            ...prev, 
+            isCreating: false, 
+            isComplete: true, 
+            diagnostic: result.data 
+          }));
+          return { 
+            success: true, 
+            result: { 
+              userId,
+              message: 'Client account created successfully using simplified approach',
+              diagnostic: result.data
+            }
+          };
+        } else {
+          throw new Error('Account type assigned but client verification failed');
+        }
       } else {
-        const errorMessage = result.error || 'Account creation failed';
+        const errorMessage = result.error || 'Enhanced account creation failed';
         console.error('Enhanced: Account creation failed:', errorMessage);
         
         setState(prev => ({ 
           ...prev, 
           isCreating: false, 
           error: errorMessage,
-          diagnostic: result.diagnostic,
-          canRetry: result.can_retry || false
+          diagnostic: result.data,
+          canRetry: true
         }));
         
         return { success: false, error: errorMessage };
@@ -97,7 +91,7 @@ export function useEnhancedClientAccountCreation() {
       console.error('Enhanced: Client account creation exception:', error);
       const errorMessage = error instanceof Error ? error.message : 'Account creation failed';
       
-      await logAuthError(error, 'enhanced_client_account_creation_exception');
+      await logAuthError(error, 'enhanced_client_account_creation_exception_simplified');
       
       setState(prev => ({ 
         ...prev, 

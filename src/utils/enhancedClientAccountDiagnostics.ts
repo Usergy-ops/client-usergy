@@ -1,5 +1,6 @@
 
 import { supabase } from '@/integrations/supabase/client';
+import { SimplifiedClientDiagnostics } from './simplifiedClientDiagnostics';
 
 interface EnhancedDiagnosticResult {
   success: boolean;
@@ -9,13 +10,6 @@ interface EnhancedDiagnosticResult {
   source: string;
 }
 
-interface UserExistenceCheck {
-  exists: boolean;
-  source: string;
-  userDetails?: any;
-  diagnostic: any;
-}
-
 export class EnhancedClientAccountDiagnostics {
   static async runComprehensiveUserCheck(email: string): Promise<EnhancedDiagnosticResult> {
     const timestamp = new Date().toISOString();
@@ -23,27 +17,43 @@ export class EnhancedClientAccountDiagnostics {
     try {
       console.log(`Running enhanced comprehensive user check for email: ${email}`);
       
-      // Check via edge function for the most accurate result
-      const { data: result, error } = await supabase.functions.invoke('client-auth-handler/check-user', {
-        body: { email }
-      });
-
-      if (error) {
-        console.error('Enhanced diagnostic edge function failed:', error);
+      // Get current user info
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
         return {
           success: false,
-          error: error.message,
+          error: 'No authenticated user found',
           timestamp,
-          source: 'edge_function_error'
+          source: 'no_user'
         };
       }
 
+      if (user.email !== email) {
+        return {
+          success: false,
+          error: 'Email mismatch with authenticated user',
+          timestamp,
+          source: 'email_mismatch'
+        };
+      }
+
+      // Use simplified diagnostics
+      const statusResult = await SimplifiedClientDiagnostics.checkUserAccountStatus(user.id);
+      
       return {
-        success: true,
-        data: result,
+        success: statusResult.success,
+        data: {
+          user_id: user.id,
+          email: user.email,
+          status: statusResult.data,
+          enhanced: true
+        },
+        error: statusResult.error,
         timestamp,
-        source: 'edge_function'
+        source: 'enhanced_comprehensive_check'
       };
+
     } catch (error) {
       console.error('Enhanced diagnostic exception:', error);
       return {
@@ -68,36 +78,21 @@ export class EnhancedClientAccountDiagnostics {
         checks: {} as any
       };
 
-      // Run comprehensive user check
-      const userCheck = await this.runComprehensiveUserCheck(email);
-      diagnostic.checks.user_existence = userCheck;
-
-      // Check for recent signup attempts
-      try {
-        const { data: otpAttempts, error: otpError } = await supabase
-          .from('user_otp_verification')
-          .select('*')
-          .eq('email', email)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (otpError) {
-          diagnostic.checks.otp_attempts = { error: otpError.message };
-        } else {
-          diagnostic.checks.otp_attempts = {
-            count: otpAttempts?.length || 0,
-            recent_attempts: otpAttempts?.map(attempt => ({
-              created_at: attempt.created_at,
-              verified_at: attempt.verified_at,
-              expires_at: attempt.expires_at
-            })) || []
-          };
-        }
-      } catch (error) {
-        diagnostic.checks.otp_attempts = { error: error instanceof Error ? error.message : 'Unknown error' };
+      // Get current user if any
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Run comprehensive check if user exists
+        const userCheck = await this.runComprehensiveUserCheck(email);
+        diagnostic.checks.user_existence = userCheck;
+      } else {
+        diagnostic.checks.user_existence = {
+          exists: false,
+          reason: 'no_authenticated_user'
+        };
       }
 
-      // Check account types
+      // Check for account type assignments
       try {
         const { data: accountTypes, error: accountError } = await supabase
           .from('account_types')
@@ -139,28 +134,34 @@ export class EnhancedClientAccountDiagnostics {
     try {
       console.log('Testing enhanced edge function health...');
       
-      const { data: result, error } = await supabase.functions.invoke('client-auth-handler/health', {
-        body: { test: true }
-      });
+      // Since we're using simplified approach, just test basic connectivity
+      const { data: testResult, error } = await supabase
+        .from('error_logs')
+        .select('id')
+        .limit(1);
 
       if (error) {
         return {
           success: false,
-          error: error.message,
+          error: `Database connectivity test failed: ${error.message}`,
           timestamp,
-          source: 'edge_function_health_error'
+          source: 'connectivity_test_failed'
         };
       }
 
       return {
         success: true,
-        data: result,
+        data: {
+          database_accessible: true,
+          simplified_mode: true,
+          message: 'Using simplified client diagnostics'
+        },
         timestamp,
-        source: 'edge_function_health'
+        source: 'simplified_health_check'
       };
 
     } catch (error) {
-      console.error('Edge function health test exception:', error);
+      console.error('Health test exception:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown health test error',
@@ -171,19 +172,6 @@ export class EnhancedClientAccountDiagnostics {
   }
 
   static async logDiagnosticEvent(event: string, data: any) {
-    try {
-      await supabase.from('error_logs').insert({
-        error_type: 'diagnostic_event',
-        error_message: event,
-        context: 'enhanced_client_diagnostics',
-        metadata: {
-          event,
-          data,
-          timestamp: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      console.error('Failed to log diagnostic event:', error);
-    }
+    await SimplifiedClientDiagnostics.logDiagnosticEvent(event, data);
   }
 }

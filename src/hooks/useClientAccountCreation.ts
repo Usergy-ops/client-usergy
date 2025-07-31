@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface ClientAccountCreationState {
   isCreating: boolean;
@@ -27,38 +28,30 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId, userMetadata);
       
-      const { data: rawResult, error } = await supabase.rpc('ensure_client_account_robust', {
-        user_id_param: userId,
-        company_name_param: userMetadata?.companyName || userMetadata?.company_name || 'My Company',
-        first_name_param: userMetadata?.contactFirstName || 
-          userMetadata?.first_name ||
-          userMetadata?.full_name?.split(' ')[0] || 'User',
-        last_name_param: userMetadata?.contactLastName || 
-          userMetadata?.last_name ||
-          userMetadata?.full_name?.split(' ').slice(1).join(' ') || ''
-      });
-
-      if (error) {
-        console.error('RPC call failed:', error);
-        throw error;
+      // Get user info
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user || user.id !== userId) {
+        throw new Error('User not found or authentication mismatch');
       }
 
-      console.log('Account creation result:', rawResult);
+      // Use simplified account type assignment
+      const result = await SimplifiedClientDiagnostics.ensureAccountType(userId, user.email!);
 
-      // Type guard to ensure we have the right structure
-      const result = rawResult as unknown as CreateClientAccountResult;
-      if (result && typeof result === 'object' && 'success' in result) {
-        if (result.success && result.is_client_account) {
+      if (result.success) {
+        // Wait a moment and verify client status
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
+        
+        if (isClient) {
           console.log('Client account created successfully');
           setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
-          return { success: true, result };
+          return { success: true, result: { is_client_account: true } };
         } else {
-          const errorMessage = result.error || 'Account creation failed';
-          console.error('Account creation failed:', errorMessage);
-          throw new Error(errorMessage);
+          throw new Error('Account type assigned but client verification failed');
         }
       } else {
-        throw new Error('Invalid response format from account creation');
+        throw new Error(result.error || 'Account creation failed');
       }
     } catch (error) {
       console.error('Client account creation failed:', error);
