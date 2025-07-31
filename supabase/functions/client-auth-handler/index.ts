@@ -74,10 +74,20 @@ async function handleSignup(req: Request) {
 
     console.log(`Signup attempt for: ${email}`)
 
-    // Check if user already exists
-    const { data: existingUser } = await supabaseAdmin.auth.admin.getUserByEmail(email)
+    // Check if user already exists using the admin client's listUsers method
+    const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers()
     
-    if (existingUser.user) {
+    if (listError) {
+      console.error('Error checking existing users:', listError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to check existing users' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const existingUser = existingUsers.users.find(user => user.email === email)
+    
+    if (existingUser) {
       console.log(`User already exists: ${email}`)
       return new Response(
         JSON.stringify({ error: 'User already exists' }),
@@ -181,7 +191,7 @@ async function handleVerifyOTP(req: Request) {
 
     console.log(`OTP verification attempt for: ${email}`)
 
-    // Verify OTP
+    // Verify OTP - updated to use verified_at instead of verified
     const { data: otpData, error: otpError } = await supabaseAdmin
       .from('client_workflow.otp_verifications')
       .select('*')
@@ -199,18 +209,19 @@ async function handleVerifyOTP(req: Request) {
       )
     }
 
-    // Mark OTP as verified
+    // Mark OTP as verified - updated to use verified_at
     await supabaseAdmin
       .from('client_workflow.otp_verifications')
       .update({ verified_at: new Date().toISOString() })
       .eq('id', otpData.id)
 
     // Get user and confirm their email
-    const { data: userData } = await supabaseAdmin.auth.admin.getUserByEmail(email)
+    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
+    const userData = existingUsers.users.find(user => user.email === email)
     
-    if (userData.user) {
+    if (userData) {
       // Confirm user email
-      await supabaseAdmin.auth.admin.updateUserById(userData.user.id, {
+      await supabaseAdmin.auth.admin.updateUserById(userData.id, {
         email_confirm: true
       })
 
@@ -235,7 +246,7 @@ async function handleVerifyOTP(req: Request) {
           success: true,
           message: 'Email verified and signed in successfully',
           session: sessionData,
-          userId: userData.user.id
+          userId: userData.id
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
