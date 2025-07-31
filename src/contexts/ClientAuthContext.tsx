@@ -9,6 +9,8 @@ import React, {
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
+import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -25,6 +27,10 @@ interface ClientAuthContextType {
   refreshSession: () => Promise<void>;
   waitForClientAccount: (userId: string, maxAttempts?: number) => Promise<boolean>;
   checkIsClientAccount: (userId: string) => Promise<boolean>;
+  // Add missing diagnostic methods
+  diagnoseAccount: (userId: string) => Promise<any>;
+  getAccountHealth: (userId: string) => Promise<any>;
+  repairAccount: (userId: string, userMetadata?: any) => Promise<boolean>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(
@@ -73,6 +79,46 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
       return false;
     } catch (error) {
       console.error('Error checking client account status:', error);
+      return false;
+    }
+  }, []);
+
+  // Add diagnostic methods
+  const diagnoseAccount = useCallback(async (userId: string) => {
+    try {
+      const result = await ClientAccountDiagnostics.runComprehensiveDiagnostic(userId);
+      return result.data || result;
+    } catch (error) {
+      console.error('Diagnostic error:', error);
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }, []);
+
+  const getAccountHealth = useCallback(async (userId: string) => {
+    try {
+      const result = await ClientAccountDiagnostics.validateClientAccountIntegrity(userId);
+      return {
+        userId: result.userId,
+        userExists: result.userExists,
+        hasAccountType: result.hasClientRecord,
+        accountType: result.hasClientRecord ? 'client' : null,
+        hasCompanyProfile: result.hasClientRecord,
+        isClientVerified: result.isClientVerified,
+        issues: result.issues,
+        recommendations: result.recommendations
+      };
+    } catch (error) {
+      console.error('Account health check error:', error);
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }, []);
+
+  const repairAccount = useCallback(async (userId: string, userMetadata?: any): Promise<boolean> => {
+    try {
+      const result = await ClientAccountDiagnostics.repairClientAccount(userId, userMetadata);
+      return result.success;
+    } catch (error) {
+      console.error('Account repair error:', error);
       return false;
     }
   }, []);
@@ -294,6 +340,9 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     refreshSession,
     waitForClientAccount,
     checkIsClientAccount,
+    diagnoseAccount,
+    getAccountHealth,
+    repairAccount,
   };
 
   return (
