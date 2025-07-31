@@ -8,9 +8,10 @@ import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface SimpleClientSignUpFormProps {
   onSuccess: (email: string) => void;
+  onSwitchToSignIn: () => void;
 }
 
-export function SimpleClientSignUpForm({ onSuccess }: SimpleClientSignUpFormProps) {
+export function SimpleClientSignUpForm({ onSuccess, onSwitchToSignIn }: SimpleClientSignUpFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -125,6 +126,20 @@ export function SimpleClientSignUpForm({ onSuccess }: SimpleClientSignUpFormProp
           )}
         </Button>
       </form>
+
+      {/* Sign In Link */}
+      <div className="text-center mt-4">
+        <p className="text-sm text-muted-foreground">
+          Already have an account?{' '}
+          <button
+            type="button"
+            onClick={onSwitchToSignIn}
+            className="text-primary hover:underline"
+          >
+            Sign in
+          </button>
+        </p>
+      </div>
     </div>
   );
 }
