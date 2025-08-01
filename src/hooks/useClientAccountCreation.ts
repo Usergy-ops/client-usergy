@@ -1,6 +1,5 @@
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
 interface ClientAccountCreationState {
@@ -28,30 +27,22 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId, userMetadata);
       
-      // Get user info
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user || user.id !== userId) {
-        throw new Error('User not found or authentication mismatch');
-      }
-
       // Use simplified client record creation
-      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata);
+      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, userMetadata.email, userMetadata);
 
       if (result.success) {
-        // Wait a moment and verify client status
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Verify client status
         const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
         
         if (isClient) {
-          console.log('Client record created successfully');
+          console.log('Client account created successfully');
           setState(prev => ({ ...prev, isCreating: false, isComplete: true }));
-          return { success: true, result: { is_client_account: true } };
+          return { success: true, is_client_account: true };
         } else {
-          throw new Error('Client record created but verification failed');
+          throw new Error('Client account created but verification failed');
         }
       } else {
-        throw new Error(result.error || 'Client record creation failed');
+        throw new Error(result.error || 'Client account creation failed');
       }
     } catch (error) {
       console.error('Client account creation failed:', error);

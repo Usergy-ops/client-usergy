@@ -1,77 +1,138 @@
 
 import { supabase } from '@/integrations/supabase/client';
 
-export interface ProfileCompletionCheck {
+interface ProfileCompletionResult {
   isComplete: boolean;
-  missingFields?: string[];
   error?: string;
+  completionPercentage?: number;
+  missingFields?: string[];
 }
 
-export async function checkProfileCompletion(userId: string): Promise<ProfileCompletionCheck> {
+export async function checkProfileCompletion(userId: string): Promise<ProfileCompletionResult> {
   try {
     console.log('Checking profile completion for user:', userId);
     
-    // Call the profile completion function with correct parameter name
-    const { data, error } = await supabase.rpc('calculate_profile_completion', {
-      user_uuid: userId
-    });
+    // Get client profile from client_workflow.clients table
+    const { data: clientProfile, error } = await supabase
+      .from('client_workflow.clients')
+      .select(`
+        email,
+        full_name,
+        first_name,
+        last_name,
+        company_name,
+        company_website,
+        industry,
+        company_size,
+        contact_role,
+        contact_phone,
+        company_country,
+        company_city,
+        company_timezone
+      `)
+      .eq('auth_user_id', userId)
+      .single();
 
     if (error) {
-      console.error('Error checking profile completion:', error);
+      console.error('Error fetching client profile:', error);
       return {
         isComplete: false,
         error: error.message
       };
     }
 
-    console.log('Profile completion result:', data);
-    
-    // Handle the numeric return value from the function
-    const completionPercentage = typeof data === 'number' ? data : 0;
-    
-    return {
-      isComplete: completionPercentage >= 80 // Consider 80% or higher as complete
+    if (!clientProfile) {
+      return {
+        isComplete: false,
+        error: 'Client profile not found',
+        missingFields: ['All profile fields']
+      };
+    }
+
+    // Define required fields for a complete profile
+    const requiredFields = {
+      email: 'Email',
+      company_name: 'Company Name',
+      full_name: 'Full Name',
+      industry: 'Industry',
+      company_size: 'Company Size',
+      contact_role: 'Contact Role',
+      company_country: 'Company Country',
+      company_city: 'Company City',
+      company_timezone: 'Company Timezone'
     };
+
+    const missingFields: string[] = [];
+    let completedFields = 0;
+    const totalFields = Object.keys(requiredFields).length;
+
+    // Check each required field
+    for (const [field, displayName] of Object.entries(requiredFields)) {
+      const value = clientProfile[field as keyof typeof clientProfile];
+      if (!value || (typeof value === 'string' && value.trim() === '')) {
+        missingFields.push(displayName);
+      } else {
+        completedFields++;
+      }
+    }
+
+    const completionPercentage = Math.round((completedFields / totalFields) * 100);
+    const isComplete = missingFields.length === 0;
+
+    console.log('Profile completion check result:', {
+      isComplete,
+      completionPercentage,
+      missingFields
+    });
+
+    return {
+      isComplete,
+      completionPercentage,
+      missingFields
+    };
+
   } catch (error) {
     console.error('Exception in profile completion check:', error);
     return {
       isComplete: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
+      missingFields: ['Unable to check profile']
     };
   }
 }
 
-export async function getIncompleteProfileFields(userId: string): Promise<string[]> {
+export async function updateClientProfile(userId: string, profileData: any) {
   try {
-    // Check if user has a client account type directly from database
-    const { data: accountType, error: accountError } = await supabase
-      .from('account_types')
-      .select('account_type')
+    console.log('Updating client profile for user:', userId, profileData);
+
+    const { data, error } = await supabase
+      .from('client_workflow.clients')
+      .update({
+        ...profileData,
+        updated_at: new Date().toISOString()
+      })
       .eq('auth_user_id', userId)
+      .select()
       .single();
 
-    if (accountError || !accountType) {
-      console.error('Error checking account type:', accountError);
-      return ['email', 'company_name'];
+    if (error) {
+      console.error('Error updating client profile:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
 
-    const isClient = accountType.account_type === 'client';
+    return {
+      success: true,
+      data
+    };
 
-    if (!isClient) {
-      return ['email', 'company_name'];
-    }
-
-    // Check profile completion to determine missing fields
-    const completionCheck = await checkProfileCompletion(userId);
-    
-    if (!completionCheck.isComplete) {
-      // Return the basic required fields that might be missing
-      return ['company_name', 'email'];
-    }
-
-    return [];
   } catch (error) {
-    console.error('Exception getting incomplete profile fields:', error);
-    return [];
+    console.error('Exception updating client profile:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
   }
 }

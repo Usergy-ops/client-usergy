@@ -3,14 +3,12 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { retryOperation, isRetryableError } from '@/utils/retryUtility';
 
 interface SignUpResult {
   success: boolean;
   error?: string;
   emailSent?: boolean;
   accountType?: string;
-  debug?: any;
 }
 
 interface SignInResult {
@@ -56,27 +54,25 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Check if user is a client account using the consolidated system
+          // Check if user is a client account
           try {
-            const { data: accountTypeData, error } = await supabase
+            const { data: accountData } = await supabase
               .from('account_types')
               .select('account_type')
               .eq('auth_user_id', session.user.id)
               .single();
             
-            const isClient = !error && accountTypeData?.account_type === 'client';
+            const isClient = accountData?.account_type === 'client';
             setIsClientAccount(isClient);
             
-            // Enhanced post-authentication redirection
             if (event === 'SIGNED_IN' && isClient) {
-              console.log('Client user signed in, preparing for redirection');
+              console.log('Client user signed in successfully');
               
-              // Small delay to ensure state is properly updated
+              // Redirect to dashboard for client users
               setTimeout(() => {
                 const currentPath = window.location.pathname;
                 if (currentPath === '/' || currentPath === '/auth' || currentPath === '/login') {
-                  console.log('Redirecting to profile page after successful authentication');
-                  window.location.href = '/profile';
+                  window.location.href = '/dashboard';
                 }
               }, 1000);
             }
@@ -86,10 +82,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
           }
         } else {
           setIsClientAccount(false);
-        }
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          console.log('User signed in successfully:', session.user.email);
         }
         
         if (event === 'SIGNED_OUT') {
@@ -111,170 +103,132 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
   const signUp = async (email: string, password: string, metadata: any = {}): Promise<SignUpResult> => {
     try {
-      console.log('Starting unified signup process for:', email);
+      console.log('Starting signup process for:', email);
 
-      const result = await retryOperation(
-        async () => {
-          const { data, error } = await supabase.functions.invoke('unified-auth', {
-            body: { 
-              action: 'signup',
-              email, 
-              password,
-              companyName: metadata.companyName || 'My Company',
-              firstName: metadata.firstName || '',
-              lastName: metadata.lastName || '',
-              accountType: metadata.accountType || 'client',
-              sourceUrl: window.location.origin
-            }
-          });
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'signup',
+          email, 
+          password,
+          companyName: metadata.companyName || 'My Company',
+          firstName: metadata.firstName || '',
+          lastName: metadata.lastName || '',
+          accountType: 'client',
+          sourceUrl: window.location.origin
+        }
+      });
 
-          if (error) {
-            throw error;
-          }
+      if (error) {
+        console.error('Signup error:', error);
+        return {
+          success: false,
+          error: error.message || 'Signup failed'
+        };
+      }
 
-          return data;
-        },
-        { maxRetries: 3, delay: 1000 }
-      );
-
-      console.log('Unified signup response:', result);
-
-      if (result?.success) {
+      if (data?.success) {
         return {
           success: true,
-          emailSent: result.emailSent,
-          accountType: result.accountType,
-          debug: result.debug
+          emailSent: data.emailSent,
+          accountType: data.accountType
         };
       }
 
       return {
         success: false,
-        error: result?.error || 'Signup failed. Please try again.'
+        error: data?.error || 'Signup failed. Please try again.'
       };
 
     } catch (error) {
       console.error('Signup exception:', error);
-      let errorMessage = 'Network error. Please check your connection and try again.';
-      
-      if (error?.message?.includes('User already exists')) {
-        errorMessage = 'An account with this email already exists. Please try signing in instead.';
-      } else if (isRetryableError(error)) {
-        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
-      }
-      
       return {
         success: false,
-        error: errorMessage
+        error: 'Network error. Please check your connection and try again.'
       };
     }
   };
 
   const signIn = async (email: string, password: string): Promise<SignInResult> => {
     try {
-      const result = await retryOperation(
-        async () => {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-          if (error) {
-            throw error;
-          }
+      if (error) {
+        console.error('Sign in error:', error);
+        let errorMessage = 'Sign in failed. Please check your credentials and try again.';
+        
+        if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+        } else if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please verify your email address before signing in.';
+        }
+        
+        return {
+          success: false,
+          error: errorMessage
+        };
+      }
 
-          return data;
-        },
-        { maxRetries: 2, delay: 1000 }
-      );
-
-      return { success: true, session: result.session };
+      return { success: true, session: data.session };
     } catch (error) {
       console.error('Sign in exception:', error);
-      
-      let errorMessage = 'Sign in failed. Please check your credentials and try again.';
-      
-      if (error?.message?.includes('Invalid login credentials')) {
-        errorMessage = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (error?.message?.includes('Email not confirmed')) {
-        errorMessage = 'Please verify your email address before signing in.';
-      } else if (isRetryableError(error)) {
-        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
-      }
-      
       return {
         success: false,
-        error: errorMessage
+        error: 'Network error. Please check your connection and try again.'
       };
     }
   };
 
   const verifyOTP = async (email: string, otpCode: string, password?: string): Promise<VerifyOTPResult> => {
     try {
-      console.log('Starting unified OTP verification for:', email);
+      console.log('Starting OTP verification for:', email);
 
-      const result = await retryOperation(
-        async () => {
-          const { data, error } = await supabase.functions.invoke('unified-auth', {
-            body: { 
-              action: 'verify-otp',
-              email, 
-              otpCode, 
-              password 
-            }
-          });
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'verify-otp',
+          email, 
+          otpCode, 
+          password 
+        }
+      });
 
-          if (error) {
-            throw error;
-          }
-
-          return data;
-        },
-        { maxRetries: 2, delay: 1500 }
-      );
-
-      console.log('Unified OTP verification response:', result);
-
-      if (result?.success && result?.session) {
-        console.log('OTP verification successful, setting session');
-        
-        // Set the session manually since we got it from the edge function
-        await supabase.auth.setSession({
-          access_token: result.session.access_token,
-          refresh_token: result.session.refresh_token
-        });
-
+      if (error) {
+        console.error('OTP verification error:', error);
         return {
-          success: true,
-          session: result.session
+          success: false,
+          error: error.message || 'Verification failed'
         };
       }
 
-      let errorMessage = result?.error || 'Invalid verification code. Please try again.';
-      
-      if (result?.error?.includes('Invalid or expired')) {
-        errorMessage = 'Invalid or expired verification code. Please request a new code.';
+      if (data?.success && data?.session) {
+        console.log('OTP verification successful');
+        
+        // Set the session manually
+        if (data.session.access_token && data.session.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token
+          });
+        }
+
+        return {
+          success: true,
+          session: data.session
+        };
       }
 
       return {
         success: false,
-        error: errorMessage
+        error: data?.error || 'Invalid verification code. Please try again.'
       };
 
     } catch (error) {
       console.error('OTP verification exception:', error);
-      
-      let errorMessage = 'Network error. Please check your connection and try again.';
-      
-      if (error?.message?.includes('Invalid or expired')) {
-        errorMessage = 'Invalid or expired verification code. Please try again or request a new code.';
-      } else if (isRetryableError(error)) {
-        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
-      }
-      
       return {
         success: false,
-        error: errorMessage
+        error: 'Network error. Please check your connection and try again.'
       };
     }
   };
@@ -299,7 +253,6 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     try {
       const redirectUrl = `${window.location.origin}/auth/callback`;
       
-      // Store account type for OAuth callback handling - always client for this context
       localStorage.setItem('pending_account_type', 'client');
       localStorage.setItem('pending_source_url', window.location.origin);
       

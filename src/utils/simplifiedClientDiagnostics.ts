@@ -1,211 +1,154 @@
 
-import { supabase } from '@/lib/supabase';
-
-interface SimpleDiagnostic {
-  isClient: boolean;
-  hasProfile: boolean;
-  issues: string[];
-}
-
-interface AccountStatus {
-  success: boolean;
-  data?: {
-    user_id: string;
-    email: string;
-    has_account_type: boolean;
-    account_type: string | null;
-    has_company_profile: boolean;
-    is_client_account: boolean;
-  };
-  error?: string;
-}
-
-interface EnsureClientResult {
-  success: boolean;
-  data?: any;
-  error?: string;
-}
+import { supabase } from '@/integrations/supabase/client';
 
 export class SimplifiedClientDiagnostics {
-  static async quickClientCheck(userId: string): Promise<SimpleDiagnostic> {
-    try {
-      // Check if user is a client
-      const { data: accountType } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', userId)
-        .single();
-
-      const isClient = accountType?.account_type === 'client';
-
-      // Check if they have a company profile
-      const { data: profile } = await supabase
-        .from('client_workspace.company_profiles')
-        .select('id')
-        .eq('auth_user_id', userId)
-        .single();
-
-      const hasProfile = !!profile;
-
-      const issues: string[] = [];
-      if (!isClient) issues.push('Not registered as client');
-      if (!hasProfile) issues.push('No company profile');
-
-      return { isClient, hasProfile, issues };
-    } catch (error) {
-      console.error('Quick diagnostic error:', error);
-      return { isClient: false, hasProfile: false, issues: ['Diagnostic failed'] };
-    }
-  }
-
+  /**
+   * Check if a user is a client account
+   */
   static async isClientAccount(userId: string): Promise<boolean> {
     try {
-      console.log(`Checking if user is client account: ${userId}`);
-      
-      const { data: accountType } = await supabase
+      const { data, error } = await supabase
         .from('account_types')
         .select('account_type')
         .eq('auth_user_id', userId)
         .single();
 
-      const isClient = accountType?.account_type === 'client';
-      console.log(`User ${userId} is client account: ${isClient}`);
-      return isClient;
+      if (error) {
+        console.error('Error checking client account status:', error);
+        return false;
+      }
+
+      return data?.account_type === 'client';
     } catch (error) {
-      console.error('Error checking client account status:', error);
+      console.error('Exception checking client account status:', error);
       return false;
     }
   }
 
-  static async ensureClientRecord(userId: string, userEmail: string, userMetadata: any): Promise<EnsureClientResult> {
+  /**
+   * Ensure a client record exists
+   */
+  static async ensureClientRecord(userId: string, email: string, metadata: any = {}) {
     try {
-      console.log('Ensuring client record for user:', userId, userEmail);
-      
+      console.log('Ensuring client record for:', userId, email);
+
       // First, ensure account type is set to client
       const { error: accountTypeError } = await supabase
         .from('account_types')
         .upsert({
           auth_user_id: userId,
           account_type: 'client'
+        }, {
+          onConflict: 'auth_user_id'
         });
 
       if (accountTypeError) {
         console.error('Error setting account type:', accountTypeError);
-        return {
-          success: false,
-          error: accountTypeError.message
-        };
+        return { success: false, error: accountTypeError.message };
       }
 
-      // Then, create a basic profile if needed
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
+      // Then, ensure client record exists in client_workflow schema
+      const fullName = metadata.firstName && metadata.lastName 
+        ? `${metadata.firstName} ${metadata.lastName}`.trim()
+        : null;
 
-      if (!existingProfile) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: userId,
-            email: userEmail,
-            full_name: userMetadata.full_name || userMetadata.firstName + ' ' + userMetadata.lastName || null
-          });
+      const { error: clientError } = await supabase
+        .from('client_workflow.clients')
+        .upsert({
+          auth_user_id: userId,
+          email,
+          full_name: fullName,
+          first_name: metadata.firstName || null,
+          last_name: metadata.lastName || null,
+          company_name: metadata.companyName || 'My Company'
+        }, {
+          onConflict: 'auth_user_id'
+        });
 
-        if (profileError) {
-          console.error('Error creating profile:', profileError);
-          return {
-            success: false,
-            error: profileError.message
-          };
-        }
+      if (clientError) {
+        console.error('Error creating client record:', clientError);
+        return { success: false, error: clientError.message };
       }
 
-      console.log('Client record ensured successfully');
-      return {
-        success: true,
-        data: {
-          account_type_set: true,
-          profile_created: !existingProfile
-        }
-      };
+      return { success: true };
     } catch (error) {
       console.error('Exception ensuring client record:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+      return { success: false, error: error.message };
     }
   }
 
-  static async checkUserAccountStatus(userId: string): Promise<AccountStatus> {
+  /**
+   * Get client profile information
+   */
+  static async getClientProfile(userId: string) {
     try {
-      console.log('Checking user account status:', userId);
-      
-      const { data: user } = await supabase.auth.getUser();
-      
-      if (!user.user || user.user.id !== userId) {
-        return {
-          success: false,
-          error: 'User not authenticated or ID mismatch'
-        };
-      }
-
-      // Check account type
-      const { data: accountType } = await supabase
-        .from('account_types')
-        .select('account_type')
+      const { data, error } = await supabase
+        .from('client_workflow.clients')
+        .select('*')
         .eq('auth_user_id', userId)
         .single();
 
-      // Check if has profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
+      if (error) {
+        console.error('Error fetching client profile:', error);
+        return { success: false, error: error.message, data: null };
+      }
 
-      const isClient = accountType?.account_type === 'client';
-
-      return {
-        success: true,
-        data: {
-          user_id: userId,
-          email: user.user.email || '',
-          has_account_type: !!accountType,
-          account_type: accountType?.account_type || null,
-          has_company_profile: !!profile,
-          is_client_account: isClient
-        }
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error('Error checking user account status:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+      console.error('Exception fetching client profile:', error);
+      return { success: false, error: error.message, data: null };
     }
   }
 
-  static async logDiagnosticEvent(event: string, data: any): Promise<void> {
+  /**
+   * Update client profile
+   */
+  static async updateClientProfile(userId: string, profileData: any) {
     try {
-      console.log(`Diagnostic event: ${event}`, data);
-      
-      // Log to error_logs table for tracking
-      await supabase
-        .from('error_logs')
-        .insert({
-          error_type: 'diagnostic_event',
-          error_message: event,
-          context: 'simplified_client_diagnostics',
-          metadata: {
-            event_data: data,
-            timestamp: new Date().toISOString()
-          }
-        });
+      const { data, error } = await supabase
+        .from('client_workflow.clients')
+        .update(profileData)
+        .eq('auth_user_id', userId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating client profile:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, data };
     } catch (error) {
-      console.error('Failed to log diagnostic event:', error);
+      console.error('Exception updating client profile:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Check profile completion status
+   */
+  static async checkProfileCompletion(userId: string) {
+    try {
+      const profile = await this.getClientProfile(userId);
+      
+      if (!profile.success || !profile.data) {
+        return { success: false, isComplete: false, error: 'Profile not found' };
+      }
+
+      const requiredFields = [
+        'email',
+        'company_name',
+        'full_name'
+      ];
+
+      const isComplete = requiredFields.every(field => 
+        profile.data[field] && profile.data[field].trim() !== ''
+      );
+
+      return { success: true, isComplete };
+    } catch (error) {
+      console.error('Exception checking profile completion:', error);
+      return { success: false, isComplete: false, error: error.message };
     }
   }
 }
