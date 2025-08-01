@@ -20,7 +20,6 @@ export function useOTPVerification() {
     try {
       console.log('Using unified auth system for OTP verification:', email);
 
-      // Use the unified auth system instead of standard Supabase auth
       const { data, error } = await supabase.functions.invoke('unified-auth', {
         body: { 
           action: 'verify-otp',
@@ -69,7 +68,6 @@ export function useOTPVerification() {
     try {
       console.log('Using unified auth system for OTP resend:', email);
 
-      // Use the unified auth system for resending
       const { data, error } = await supabase.functions.invoke('unified-auth', {
         body: { 
           action: 'resend-otp',

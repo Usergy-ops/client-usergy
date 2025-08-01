@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -84,20 +83,23 @@ export function EnhancedClientSignUpForm() {
     setCanRetry(false);
 
     try {
-      console.log('Starting enhanced client sign up process...');
+      console.log('Using unified auth for enhanced client sign up process...');
       
-      const { data, error: signUpError } = await supabase.functions.invoke('client-auth-handler/signup', {
+      const { data, error: signUpError } = await supabase.functions.invoke('unified-auth', {
         body: {
+          action: 'signup',
           email: formData.email,
           password: formData.password,
           companyName: formData.companyName,
           firstName: formData.contactFirstName,
           lastName: formData.contactLastName,
+          accountType: 'client',
+          sourceUrl: window.location.origin
         }
       });
 
       if (signUpError) {
-        console.error('Enhanced sign up error:', signUpError);
+        console.error('Enhanced unified auth sign up error:', signUpError);
         setSignupStatus('error');
         setError(`Sign up failed: ${signUpError.message}`);
         setCanRetry(true);
@@ -105,21 +107,16 @@ export function EnhancedClientSignUpForm() {
       }
 
       if (data?.error) {
-        console.error('Enhanced sign up response error:', data.error);
+        console.error('Enhanced unified auth sign up response error:', data.error);
         setSignupStatus('error');
         setDiagnostic(data.diagnostic);
-        setCanRetry(data.can_retry || false);
+        setCanRetry(true);
         
         // Enhanced error handling with better user messaging
         if (data.error.includes('already exists')) {
-          if (data.can_retry) {
-            setError('We found an old incomplete signup for this email. We\'ve cleaned it up - please try again in a moment.');
-          } else {
-            setError('An account with this email already exists. Please sign in instead.');
-          }
+          setError('An account with this email already exists. Please sign in instead.');
         } else if (data.error.includes('signup is already in progress')) {
           setError('A signup is already in progress for this email. Please check your email for verification or try again in a few minutes.');
-          setCanRetry(true);
         } else {
           setError(`Sign up failed: ${data.error}`);
         }
@@ -127,7 +124,7 @@ export function EnhancedClientSignUpForm() {
       }
 
       if (data?.success) {
-        console.log('Enhanced sign up successful:', data);
+        console.log('Enhanced unified auth sign up successful:', data);
         setSignupStatus('sending-email');
         setDiagnostic(data.diagnostic);
         

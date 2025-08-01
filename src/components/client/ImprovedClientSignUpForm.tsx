@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertTriangle, Mail, Lock, User, Building2 } from 'lucide-react';
-import { useEnhancedClientAuth } from '@/contexts/EnhancedClientAuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface ImprovedClientSignUpFormProps {
   onSuccess: (email: string, password: string) => void;
@@ -18,7 +18,6 @@ export function ImprovedClientSignUpForm({ onSuccess }: ImprovedClientSignUpForm
   const [companyName, setCompanyName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signUp, signInWithGoogle } = useEnhancedClientAuth();
 
   const validateForm = () => {
     if (!email) return 'Please enter your email address';
@@ -43,22 +42,58 @@ export function ImprovedClientSignUpForm({ onSuccess }: ImprovedClientSignUpForm
     setError('');
 
     try {
-      const result = await signUp(email, password, {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        companyName: companyName.trim(),
+      console.log('Using unified auth for improved client signup...');
+      
+      const result = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'signup',
+          email, 
+          password,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          companyName: companyName.trim(),
+          accountType: 'client',
+          sourceUrl: window.location.origin
+        }
       });
       
-      if (result.success) {
+      if (result.error) {
+        console.error('Unified auth signup error:', result.error);
+        setError(result.error.message || 'Sign up failed. Please try again.');
+        return;
+      }
+
+      if (result.data?.success) {
         onSuccess(email, password);
       } else {
-        setError(result.error || 'Sign up failed. Please try again.');
+        setError(result.data?.error || 'Sign up failed. Please try again.');
       }
     } catch (error) {
       console.error('Signup error:', error);
       setError('Network error. Please check your connection and try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+        }
+      });
+
+      if (error) {
+        console.error('Google sign in error:', error);
+        setError(error.message);
+      }
+    } catch (error) {
+      console.error('Google sign in exception:', error);
+      setError('Failed to sign in with Google. Please try again.');
     }
   };
 

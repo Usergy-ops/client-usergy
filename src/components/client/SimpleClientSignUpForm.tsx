@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertTriangle, Mail, Lock } from 'lucide-react';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface SimpleClientSignUpFormProps {
   onSuccess: (email: string) => void;
@@ -16,7 +16,6 @@ export function SimpleClientSignUpForm({ onSuccess, onSwitchToSignIn }: SimpleCl
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signUp, signInWithGoogle } = useClientAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,15 +28,57 @@ export function SimpleClientSignUpForm({ onSuccess, onSwitchToSignIn }: SimpleCl
     setLoading(true);
     setError('');
 
-    const result = await signUp(email, password);
-    
-    if (result.success) {
-      onSuccess(email);
-    } else {
-      setError(result.error || 'Sign up failed');
+    try {
+      console.log('Using unified auth for simple client signup...');
+      
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'signup',
+          email, 
+          password,
+          accountType: 'client',
+          sourceUrl: window.location.origin
+        }
+      });
+
+      if (error) {
+        console.error('Unified auth signup error:', error);
+        setError(error.message || 'Sign up failed');
+        return;
+      }
+
+      if (data?.success) {
+        onSuccess(email);
+      } else {
+        setError(data?.error || 'Sign up failed');
+      }
+    } catch (error) {
+      console.error('Signup exception:', error);
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
+  };
+
+  const signInWithGoogle = async () => {
+    try {
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+        }
+      });
+
+      if (error) {
+        console.error('Google sign in error:', error);
+        setError(error.message);
+      }
+    } catch (error) {
+      console.error('Google sign in exception:', error);
+      setError('Failed to sign in with Google. Please try again.');
+    }
   };
 
   return (

@@ -78,20 +78,23 @@ export function ClientSignUpForm() {
     setError('');
 
     try {
-      console.log('Starting streamlined client sign up process...');
+      console.log('Using unified auth for client sign up process...');
       
-      const { data, error: signUpError } = await supabase.functions.invoke('client-auth-handler/signup', {
+      const { data, error: signUpError } = await supabase.functions.invoke('unified-auth', {
         body: {
+          action: 'signup',
           email: formData.email,
           password: formData.password,
           companyName: formData.companyName,
           firstName: formData.contactFirstName,
           lastName: formData.contactLastName,
+          accountType: 'client',
+          sourceUrl: window.location.origin
         }
       });
 
       if (signUpError) {
-        console.error('Sign up error:', signUpError);
+        console.error('Unified auth sign up error:', signUpError);
         setSignupStatus('error');
         
         if (signUpError.message?.includes('already exists')) {
@@ -103,7 +106,7 @@ export function ClientSignUpForm() {
       }
 
       if (data?.error) {
-        console.error('Sign up response error:', data.error);
+        console.error('Unified auth sign up response error:', data.error);
         setSignupStatus('error');
         
         if (data.error.includes('already exists')) {
@@ -115,7 +118,7 @@ export function ClientSignUpForm() {
       }
 
       if (data?.success) {
-        console.log('Sign up successful:', data);
+        console.log('Unified auth sign up successful:', data);
         setSignupStatus('sending-email');
         
         // Brief delay for better UX

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -5,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { supabase } from '@/lib/supabase';
 
 interface ImprovedOTPVerificationProps {
@@ -22,7 +22,6 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
   const [success, setSuccess] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { verifyOTP } = useClientAuth();
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus on input
@@ -44,11 +43,32 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
     setError('');
 
     try {
-      console.log('Starting OTP verification via client auth context...');
-      const result = await verifyOTP(email, otpCode, password);
+      console.log('Starting unified auth OTP verification...');
       
-      if (result.success) {
-        console.log('OTP verification successful');
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'verify-otp',
+          email, 
+          otpCode, 
+          password 
+        }
+      });
+      
+      if (error || !data?.success) {
+        console.error('Unified auth OTP verification failed:', error || data?.error);
+        setError(data?.error || error?.message || 'Invalid verification code. Please try again.');
+        return;
+      }
+
+      if (data?.session) {
+        console.log('OTP verification successful, setting session');
+        
+        // Set the session manually since we got it from the edge function
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+
         setSuccess(true);
         toast({
           title: "Email Verified!",
@@ -60,8 +80,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
           navigate('/dashboard');
         }, 1500);
       } else {
-        console.error('OTP verification failed:', result.error);
-        setError(result.error || 'Invalid verification code. Please try again.');
+        setError('Verification successful but session creation failed. Please try signing in.');
       }
     } catch (error) {
       console.error('OTP verification error:', error);
@@ -76,7 +95,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
     setError('');
     
     try {
-      console.log('Starting OTP resend via unified auth...');
+      console.log('Starting unified auth OTP resend...');
       
       const { data, error } = await supabase.functions.invoke('unified-auth', {
         body: { 

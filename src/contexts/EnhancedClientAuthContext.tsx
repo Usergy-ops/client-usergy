@@ -40,12 +40,12 @@ export function EnhancedClientAuthProvider({ children }: { children: React.React
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state change:', event, session?.user?.email);
+        console.log('Enhanced Auth state change:', event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
         
         if (event === 'SIGNED_IN' && session?.user) {
-          console.log('User signed in successfully:', session.user.email);
+          console.log('Enhanced User signed in successfully:', session.user.email);
         }
       }
     );
@@ -62,22 +62,25 @@ export function EnhancedClientAuthProvider({ children }: { children: React.React
 
   const signUp = async (email: string, password: string, metadata: any = {}): Promise<SignUpResult> => {
     try {
-      console.log('Enhanced: Starting signup process for:', email);
+      console.log('Enhanced: Starting unified auth signup process for:', email);
 
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
         body: { 
+          action: 'signup',
           email, 
           password,
           companyName: metadata.companyName || 'My Company',
           firstName: metadata.firstName || '',
-          lastName: metadata.lastName || ''
+          lastName: metadata.lastName || '',
+          accountType: 'client',
+          sourceUrl: window.location.origin
         }
       });
 
-      console.log('Enhanced: Signup response:', { data, error });
+      console.log('Enhanced: Unified auth signup response:', { data, error });
 
       if (error) {
-        console.error('Enhanced: Signup error:', error);
+        console.error('Enhanced: Unified auth signup error:', error);
         return { 
           success: false, 
           error: error.message || 'Signup failed. Please try again.' 
@@ -98,7 +101,7 @@ export function EnhancedClientAuthProvider({ children }: { children: React.React
       };
 
     } catch (error) {
-      console.error('Enhanced: Signup exception:', error);
+      console.error('Enhanced: Unified auth signup exception:', error);
       return {
         success: false,
         error: 'Network error. Please check your connection and try again.'
@@ -108,16 +111,21 @@ export function EnhancedClientAuthProvider({ children }: { children: React.React
 
   const verifyOTP = async (email: string, otpCode: string, password?: string): Promise<VerifyOTPResult> => {
     try {
-      console.log('Enhanced: Starting OTP verification for:', email);
+      console.log('Enhanced: Starting unified auth OTP verification for:', email);
 
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: { email, otpCode, password }
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'verify-otp',
+          email, 
+          otpCode, 
+          password 
+        }
       });
 
-      console.log('Enhanced: OTP verification response:', { data, error });
+      console.log('Enhanced: Unified auth OTP verification response:', { data, error });
 
       if (error) {
-        console.error('Enhanced: OTP verification error:', error);
+        console.error('Enhanced: Unified auth OTP verification error:', error);
         return { 
           success: false, 
           error: error.message || 'Verification failed. Please try again.' 
@@ -125,7 +133,7 @@ export function EnhancedClientAuthProvider({ children }: { children: React.React
       }
 
       if (data?.success && data?.session) {
-        console.log('Enhanced: OTP verification successful, setting session');
+        console.log('Enhanced: Unified auth OTP verification successful, setting session');
         
         // Set the session manually since we got it from the edge function
         await supabase.auth.setSession({
@@ -145,7 +153,7 @@ export function EnhancedClientAuthProvider({ children }: { children: React.React
       };
 
     } catch (error) {
-      console.error('Enhanced: OTP verification exception:', error);
+      console.error('Enhanced: Unified auth OTP verification exception:', error);
       return {
         success: false,
         error: 'Network error. Please check your connection and try again.'
