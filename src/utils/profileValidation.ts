@@ -69,9 +69,12 @@ export async function updateClientProfile(userId: string, profileData: any) {
       };
     }
 
+    // Type cast the data as an object with success property
+    const result = data as { success?: boolean } | null;
+    
     return {
-      success: data?.success || true,
-      data: data
+      success: result?.success || true,
+      data: result
     };
 
   } catch (error) {

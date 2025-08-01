@@ -42,9 +42,12 @@ export class SimplifiedClientDiagnostics {
         return { success: false, error: error.message };
       }
 
+      // Type cast the data as an object with success property
+      const result = data as { success?: boolean } | null;
+
       return { 
-        success: data?.success || true,
-        data: data
+        success: result?.success || true,
+        data: result
       };
     } catch (error) {
       console.error('Exception ensuring client record:', error);
@@ -139,12 +142,15 @@ export class SimplifiedClientDiagnostics {
         return { success: false, error: error.message, data: null };
       }
 
+      // Type cast debugInfo to handle the Json type safely
+      const info = debugInfo as any;
+      
       return { 
         success: true, 
         data: {
-          isClient: debugInfo?.account_type_info?.account_type === 'client',
-          accountType: debugInfo?.account_type_info?.account_type,
-          debugInfo
+          isClient: info?.account_type_info?.account_type === 'client',
+          accountType: info?.account_type_info?.account_type,
+          debugInfo: info
         }
       };
     } catch (error) {
