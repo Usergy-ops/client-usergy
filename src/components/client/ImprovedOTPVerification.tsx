@@ -1,8 +1,10 @@
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, CheckCircle, ArrowLeft, RefreshCw, Mail, Shield } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { AlertCircle, CheckCircle, ArrowLeft, RefreshCw, Mail, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -34,7 +36,7 @@ export function ImprovedOTPVerification({ email, onBack, onSuccess }: ImprovedOT
       const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: otp,
-        type: 'email'
+        type: 'signup'
       });
 
       if (error) {
@@ -59,7 +61,7 @@ export function ImprovedOTPVerification({ email, onBack, onSuccess }: ImprovedOT
 
     try {
       const { error } = await supabase.auth.resend({
-        type: 'email',
+        type: 'signup',
         email,
         options: {
           emailRedirectTo: `${window.location.origin}/`
@@ -107,7 +109,20 @@ export function ImprovedOTPVerification({ email, onBack, onSuccess }: ImprovedOT
 
         <div className="grid gap-2">
           <Label htmlFor="otp">Verification Code</Label>
-          <InputOTPGroup length={6} value={otp} onChange={setOtp} />
+          <InputOTP
+            maxLength={6}
+            value={otp}
+            onChange={setOtp}
+          >
+            <InputOTPGroup>
+              <InputOTPSlot index={0} />
+              <InputOTPSlot index={1} />
+              <InputOTPSlot index={2} />
+              <InputOTPSlot index={3} />
+              <InputOTPSlot index={4} />
+              <InputOTPSlot index={5} />
+            </InputOTPGroup>
+          </InputOTP>
         </div>
 
         <Button disabled={loading || verified} className="usergy-btn-primary">

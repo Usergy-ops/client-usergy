@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,18 +24,15 @@ export function ClientPasswordResetForm({ onBack }: ClientPasswordResetFormProps
     setError('');
 
     try {
-      // Call our secure function to generate password reset token
-      const { data, error: functionError } = await supabase.rpc(
-        'generate_client_password_reset_token',
-        { user_email: email }
-      );
+      // Use the built-in Supabase auth reset password functionality
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`
+      });
 
-      if (functionError) {
-        throw functionError;
+      if (resetError) {
+        throw resetError;
       }
 
-      // In a real implementation, you would send the reset email here
-      // For now, we'll just show success
       setSent(true);
     } catch (error: any) {
       console.error('Password reset error:', error);

@@ -38,7 +38,11 @@ export class ClientAccountDiagnostics {
       const { data: debugInfo } = await supabase
         .rpc('get_user_debug_info', { user_id_param: userId });
 
-      const accountType = debugInfo?.account_type_info?.account_type;
+      // Safely access the account type from the debug info
+      const accountType = debugInfo && typeof debugInfo === 'object' && debugInfo !== null
+        ? (debugInfo as any).account_type_info?.account_type
+        : null;
+      
       const isClientVerified = accountType === 'client';
       
       if (!isClientVerified) {
@@ -117,7 +121,6 @@ export class ClientAccountDiagnostics {
     }
   }
 
-  // Add the missing methods that other files are trying to call
   static async checkRLSPolicies(userId: string) {
     try {
       const results = [];
@@ -168,6 +171,7 @@ export class ClientAccountDiagnostics {
         return { success: false, error: error.message };
       }
 
+      // Safely access the debug info
       const debugInfo = data as any;
       
       return {

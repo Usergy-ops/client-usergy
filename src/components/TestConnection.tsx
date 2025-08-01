@@ -57,17 +57,18 @@ export function TestConnection() {
     if (!user) return;
     
     try {
-      // Simple diagnostic check
+      // Simple diagnostic check using existing tables
       const { data: accountType, error: accountError } = await supabase
         .from('account_types')
         .select('account_type')
         .eq('auth_user_id', user.id)
         .single();
 
-      const { data: clientRecord, error: clientError } = await supabase
-        .from('client_workflow.clients')
+      // Check profiles table instead of non-existent client table
+      const { data: profileRecord, error: profileError } = await supabase
+        .from('profiles')
         .select('*')
-        .eq('auth_user_id', user.id)
+        .eq('user_id', user.id)
         .single();
 
       setDiagnosticInfo({
@@ -75,8 +76,8 @@ export function TestConnection() {
         user_email: user.email,
         account_type_exists: !accountError,
         account_type: accountType?.account_type,
-        client_record_exists: !clientError,
-        client_data: clientRecord
+        profile_record_exists: !profileError,
+        profile_data: profileRecord
       });
     } catch (error) {
       console.error('Diagnostic error:', error);
@@ -236,7 +237,7 @@ export function TestConnection() {
                 <div>Email: {diagnosticInfo.user_email}</div>
                 <div>Has Account Type: {diagnosticInfo.account_type_exists ? '✓' : '✗'}</div>
                 <div>Account Type: {diagnosticInfo.account_type}</div>
-                <div>Has Client Record: {diagnosticInfo.client_record_exists ? '✓' : '✗'}</div>
+                <div>Has Profile Record: {diagnosticInfo.profile_record_exists ? '✓' : '✗'}</div>
               </>
             )}
           </div>
