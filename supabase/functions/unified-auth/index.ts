@@ -7,15 +7,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+)
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
-
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  )
 
   try {
     const { action, email, password, otp, source_domain } = await req.json()
@@ -31,15 +31,18 @@ serve(async (req) => {
         // Generate OTP
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
         
-        // Store OTP with source domain
-        await supabase.from('user_otp_verification').insert({
+        // Store OTP - FIX: Use correct table name
+        await supabase.from('auth_otp_verifications').insert({
           email,
           otp_code: otpCode,
           expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          source_url: source_domain,
+          account_type: source_domain?.includes('user.usergy.ai') ? 'user' : 'client',
           metadata: { source_domain }
         })
 
-        // Send email (implement your email logic)
+        // TODO: Send email with your email service
+        console.log(`OTP for ${email}: ${otpCode}`)
         
         return new Response(
           JSON.stringify({ success: true }),
@@ -47,39 +50,76 @@ serve(async (req) => {
         )
 
       case 'verify':
-        // Verify OTP
-        const { data: otpData } = await supabase
-          .from('user_otp_verification')
+        // Verify OTP - FIX: Use correct table name
+        const { data: otpData, error: otpError } = await supabase
+          .from('auth_otp_verifications')
           .select('*')
           .eq('email', email)
           .eq('otp_code', otp)
+          .gt('expires_at', new Date().toISOString())
+          .order('created_at', { ascending: false })
+          .limit(1)
           .single()
 
-        if (!otpData || new Date() > new Date(otpData.expires_at)) {
+        if (otpError || !otpData) {
           throw new Error('Invalid or expired OTP')
         }
 
         // Create user with metadata
-        const { data: userData, error } = await supabase.auth.admin.createUser({
+        const { data: userData, error: createError } = await supabase.auth.admin.createUser({
           email,
           password,
           email_confirm: true,
           user_metadata: {
-            source_domain: otpData.metadata?.source_domain || source_domain,
-            account_type: source_domain?.includes('user.usergy.ai') ? 'user' : 'client'
+            source_domain: otpData.source_url || source_domain,
+            account_type: otpData.account_type
           }
         })
 
-        if (error) throw error
+        if (createError) throw createError
 
         // Mark OTP as used
         await supabase
-          .from('user_otp_verification')
+          .from('auth_otp_verifications')
           .update({ verified_at: new Date().toISOString() })
           .eq('id', otpData.id)
 
         return new Response(
           JSON.stringify({ success: true, userId: userData.user.id }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+
+      case 'resend':
+        // Implement resend logic
+        const { data: lastOtp } = await supabase
+          .from('auth_otp_verifications')
+          .select('*')
+          .eq('email', email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (lastOtp && new Date(lastOtp.created_at) > new Date(Date.now() - 60000)) {
+          throw new Error('Please wait before requesting a new code')
+        }
+
+        // Generate new OTP
+        const newOtpCode = Math.floor(100000 + Math.random() * 900000).toString()
+        
+        await supabase.from('auth_otp_verifications').insert({
+          email,
+          otp_code: newOtpCode,
+          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          source_url: source_domain,
+          account_type: source_domain?.includes('user.usergy.ai') ? 'user' : 'client',
+          metadata: { source_domain }
+        })
+
+        // TODO: Send email
+        console.log(`New OTP for ${email}: ${newOtpCode}`)
+        
+        return new Response(
+          JSON.stringify({ success: true }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
 
