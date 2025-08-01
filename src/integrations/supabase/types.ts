@@ -35,6 +35,54 @@ export type Database = {
         }
         Relationships: []
       }
+      auth_otp_verifications: {
+        Row: {
+          account_type: string
+          attempts: number | null
+          blocked_until: string | null
+          created_at: string | null
+          email: string
+          email_error: string | null
+          email_sent: boolean | null
+          expires_at: string
+          id: string
+          metadata: Json | null
+          otp_code: string
+          source_url: string
+          verified_at: string | null
+        }
+        Insert: {
+          account_type: string
+          attempts?: number | null
+          blocked_until?: string | null
+          created_at?: string | null
+          email: string
+          email_error?: string | null
+          email_sent?: boolean | null
+          expires_at: string
+          id?: string
+          metadata?: Json | null
+          otp_code: string
+          source_url: string
+          verified_at?: string | null
+        }
+        Update: {
+          account_type?: string
+          attempts?: number | null
+          blocked_until?: string | null
+          created_at?: string | null
+          email?: string
+          email_error?: string | null
+          email_sent?: boolean | null
+          expires_at?: string
+          id?: string
+          metadata?: Json | null
+          otp_code?: string
+          source_url?: string
+          verified_at?: string | null
+        }
+        Relationships: []
+      }
       consolidated_social_presence: {
         Row: {
           additional_links: string[] | null
@@ -74,6 +122,39 @@ export type Database = {
           twitter_url?: string | null
           updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      email_send_logs: {
+        Row: {
+          created_at: string | null
+          email: string
+          email_type: string
+          error_message: string | null
+          id: string
+          metadata: Json | null
+          resend_response: Json | null
+          status: string
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          email_type: string
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          resend_response?: Json | null
+          status: string
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          email_type?: string
+          error_message?: string | null
+          id?: string
+          metadata?: Json | null
+          resend_response?: Json | null
+          status?: string
         }
         Relationships: []
       }
@@ -456,10 +537,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      assign_account_type_by_domain: {
-        Args: { user_id_param: string; user_email: string }
-        Returns: Json
-      }
       calculate_profile_completion: {
         Args: { user_uuid: string }
         Returns: number
@@ -488,15 +565,6 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
-      ensure_client_account: {
-        Args: {
-          user_id_param: string
-          company_name_param?: string
-          first_name_param?: string
-          last_name_param?: string
-        }
-        Returns: Json
-      }
       ensure_client_account_robust: {
         Args: {
           user_id_param: string
@@ -510,29 +578,25 @@ export type Database = {
         Args: { user_uuid: string; user_email: string; user_full_name?: string }
         Returns: boolean
       }
-      ensure_user_has_account_type: {
-        Args: { user_id_param?: string }
-        Returns: boolean
-      }
       fix_existing_users_without_account_types: {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
-      get_user_account_type: {
-        Args: { user_id_param?: string }
-        Returns: string
+      fix_incorrect_account_types: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
-      is_client_account: {
-        Args: { user_id_param?: string }
-        Returns: boolean
+      get_user_debug_info: {
+        Args: { user_id_param: string }
+        Returns: Json
       }
       is_profile_complete: {
         Args: { user_id_param: string }
         Returns: boolean
       }
-      is_user_account: {
-        Args: { user_id_param?: string }
-        Returns: boolean
+      manually_assign_account_type: {
+        Args: { user_id_param: string; account_type_param: string }
+        Returns: Json
       }
       monitor_account_type_coverage: {
         Args: Record<PropertyKey, never>
@@ -553,6 +617,10 @@ export type Database = {
           company_timezone_param?: string
           company_logo_url_param?: string
         }
+        Returns: Json
+      }
+      test_email_configuration: {
+        Args: Record<PropertyKey, never>
         Returns: Json
       }
       validate_password_requirements: {

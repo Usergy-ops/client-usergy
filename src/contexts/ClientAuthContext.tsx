@@ -8,6 +8,7 @@ interface SignUpResult {
   success: boolean;
   error?: string;
   emailSent?: boolean;
+  accountType?: string;
   debug?: any;
 }
 
@@ -53,15 +54,15 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Check if user is a client account
+          // Check if user is a client account using the consolidated system
           try {
-            const { data, error } = await supabase
-              .from('client_workflow.clients')
-              .select('id')
+            const { data: accountTypeData, error } = await supabase
+              .from('account_types')
+              .select('account_type')
               .eq('auth_user_id', session.user.id)
               .single();
             
-            setIsClientAccount(!error && !!data);
+            setIsClientAccount(!error && accountTypeData?.account_type === 'client');
           } catch (error) {
             console.error('Error checking client account:', error);
             setIsClientAccount(false);
@@ -88,7 +89,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
   const signUp = async (email: string, password: string, metadata: any = {}): Promise<SignUpResult> => {
     try {
-      console.log('Starting signup process for:', email);
+      console.log('Starting unified signup process for:', email);
 
       const { data, error } = await supabase.functions.invoke('unified-auth', {
         body: { 
@@ -97,11 +98,13 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
           password,
           companyName: metadata.companyName || 'My Company',
           firstName: metadata.firstName || '',
-          lastName: metadata.lastName || ''
+          lastName: metadata.lastName || '',
+          accountType: metadata.accountType || 'client',
+          sourceUrl: window.location.origin
         }
       });
 
-      console.log('Signup response:', { data, error });
+      console.log('Unified signup response:', { data, error });
 
       if (error) {
         console.error('Signup error:', error);
@@ -115,6 +118,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         return {
           success: true,
           emailSent: data.emailSent,
+          accountType: data.accountType,
           debug: data.debug
         };
       }
@@ -156,7 +160,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
 
   const verifyOTP = async (email: string, otpCode: string, password?: string): Promise<VerifyOTPResult> => {
     try {
-      console.log('Starting OTP verification for:', email);
+      console.log('Starting unified OTP verification for:', email);
 
       const { data, error } = await supabase.functions.invoke('unified-auth', {
         body: { 
@@ -167,7 +171,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         }
       });
 
-      console.log('OTP verification response:', { data, error });
+      console.log('Unified OTP verification response:', { data, error });
 
       if (error) {
         console.error('OTP verification error:', error);
@@ -225,6 +229,10 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
   const signInWithGoogle = async () => {
     try {
       const redirectUrl = `${window.location.origin}/auth/callback`;
+      
+      // Store account type for OAuth callback handling
+      localStorage.setItem('pending_account_type', 'client');
+      localStorage.setItem('pending_source_url', window.location.origin);
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',

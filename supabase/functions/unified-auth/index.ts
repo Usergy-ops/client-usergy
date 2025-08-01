@@ -24,6 +24,8 @@ interface AuthRequest {
   firstName?: string
   lastName?: string
   otpCode?: string
+  accountType?: 'user' | 'client'
+  sourceUrl?: string
 }
 
 Deno.serve(async (req) => {
@@ -62,15 +64,18 @@ Deno.serve(async (req) => {
 
 async function handleSignup(body: AuthRequest) {
   try {
-    const { email, password, companyName, firstName, lastName } = body
+    const { email, password, companyName, firstName, lastName, accountType, sourceUrl } = body
 
     console.log(`Signup attempt for: ${email}`)
 
-    // Determine account type based on domain
-    const domain = email.split('@')[1]
-    const accountType = domain === 'usergy.ai' ? 'user' : 'client'
+    // Determine account type - explicit override or domain-based detection
+    let detectedAccountType = accountType
+    if (!detectedAccountType) {
+      const domain = email.split('@')[1]
+      detectedAccountType = domain === 'user.usergy.ai' ? 'user' : 'client'
+    }
     
-    console.log(`Account type determined: ${accountType} for domain: ${domain}`)
+    console.log(`Account type determined: ${detectedAccountType} for email: ${email}`)
 
     // Check if user already exists
     const { data: existingUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers()
@@ -97,12 +102,13 @@ async function handleSignup(body: AuthRequest) {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: false, // We'll handle email confirmation with OTP
+      email_confirm: false, // We'll handle email confirmation with OTP for clients
       user_metadata: {
-        companyName: companyName || (accountType === 'client' ? 'My Company' : ''),
+        companyName: companyName || (detectedAccountType === 'client' ? 'My Company' : ''),
         firstName: firstName || '',
         lastName: lastName || '',
-        account_type: accountType
+        account_type: detectedAccountType,
+        source_url: sourceUrl || 'https://client.usergy.ai'
       }
     })
 
@@ -114,17 +120,25 @@ async function handleSignup(body: AuthRequest) {
       )
     }
 
-    // Generate and store OTP for clients only
-    if (accountType === 'client') {
+    // Handle account type specific flow
+    if (detectedAccountType === 'client') {
+      // Generate and store OTP for clients
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
       const { error: otpError } = await supabaseAdmin
-        .from('client_workflow.otp_verifications')
+        .from('auth_otp_verifications')
         .insert({
           email,
           otp_code: otpCode,
-          expires_at: expiresAt.toISOString()
+          expires_at: expiresAt.toISOString(),
+          account_type: 'client',
+          source_url: sourceUrl || 'https://client.usergy.ai',
+          metadata: {
+            company_name: companyName,
+            first_name: firstName,
+            last_name: lastName
+          }
         })
 
       if (otpError) {
@@ -137,20 +151,6 @@ async function handleSignup(body: AuthRequest) {
         )
       }
 
-      // Create client record
-      const { error: clientError } = await supabaseAdmin
-        .from('client_workflow.clients')
-        .insert({
-          auth_user_id: authData.user.id,
-          email: email,
-          full_name: firstName && lastName ? `${firstName} ${lastName}` : null,
-          company_name: companyName || null
-        })
-
-      if (clientError) {
-        console.error('Client record creation error:', clientError)
-      }
-
       console.log(`Client signup successful for: ${email}, OTP: ${otpCode}`)
 
       return new Response(
@@ -158,12 +158,13 @@ async function handleSignup(body: AuthRequest) {
           success: true, 
           message: 'Account created. Check your email for verification code.',
           emailSent: true,
-          debug: { otpCode, accountType } // Remove in production
+          accountType: 'client',
+          debug: { otpCode } // Remove in production
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     } else {
-      // For users, confirm email immediately and create session
+      // For users, confirm email immediately
       await supabaseAdmin.auth.admin.updateUserById(authData.user.id, {
         email_confirm: true
       })
@@ -175,7 +176,7 @@ async function handleSignup(body: AuthRequest) {
           success: true, 
           message: 'Account created successfully.',
           emailSent: false,
-          debug: { accountType }
+          accountType: 'user'
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -196,9 +197,9 @@ async function handleVerifyOTP(body: AuthRequest) {
 
     console.log(`OTP verification attempt for: ${email}`)
 
-    // Verify OTP
+    // Verify OTP using the consolidated table
     const { data: otpData, error: otpError } = await supabaseAdmin
-      .from('client_workflow.otp_verifications')
+      .from('auth_otp_verifications')
       .select('*')
       .eq('email', email)
       .eq('otp_code', otpCode)
@@ -216,7 +217,7 @@ async function handleVerifyOTP(body: AuthRequest) {
 
     // Mark OTP as verified
     await supabaseAdmin
-      .from('client_workflow.otp_verifications')
+      .from('auth_otp_verifications')
       .update({ verified_at: new Date().toISOString() })
       .eq('id', otpData.id)
 
@@ -283,17 +284,20 @@ async function handleResendOTP(body: AuthRequest) {
 
     // Delete old OTP codes for this email
     await supabaseAdmin
-      .from('client_workflow.otp_verifications')
+      .from('auth_otp_verifications')
       .delete()
       .eq('email', email)
+      .is('verified_at', null)
 
     // Insert new OTP
     const { error: otpError } = await supabaseAdmin
-      .from('client_workflow.otp_verifications')
+      .from('auth_otp_verifications')
       .insert({
         email,
         otp_code: otpCode,
-        expires_at: expiresAt.toISOString()
+        expires_at: expiresAt.toISOString(),
+        account_type: 'client',
+        source_url: 'https://client.usergy.ai'
       })
 
     if (otpError) {
