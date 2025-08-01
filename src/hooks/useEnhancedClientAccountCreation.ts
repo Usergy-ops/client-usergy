@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useErrorLogger } from './useErrorLogger';
 import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
 
@@ -10,16 +10,6 @@ interface EnhancedClientAccountCreationState {
   error: string | null;
   diagnostic?: any;
   canRetry?: boolean;
-}
-
-interface CreateClientAccountResult {
-  success: boolean;
-  userId?: string;
-  message?: string;
-  emailSent?: boolean;
-  diagnostic?: any;
-  can_retry?: boolean;
-  error?: string;
 }
 
 export function useEnhancedClientAccountCreation() {
@@ -60,14 +50,14 @@ export function useEnhancedClientAccountCreation() {
             ...prev, 
             isCreating: false, 
             isComplete: true, 
-            diagnostic: result.data 
+            diagnostic: result.data || {} 
           }));
           return { 
             success: true, 
             result: { 
               userId,
               message: 'Client account created successfully using simplified approach',
-              diagnostic: result.data
+              diagnostic: result.data || {}
             }
           };
         } else {
@@ -81,7 +71,7 @@ export function useEnhancedClientAccountCreation() {
           ...prev, 
           isCreating: false, 
           error: errorMessage,
-          diagnostic: result.data,
+          diagnostic: result.data || {},
           canRetry: true
         }));
         

@@ -8,17 +8,14 @@ export class SimplifiedClientDiagnostics {
   static async isClientAccount(userId: string): Promise<boolean> {
     try {
       const { data, error } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', userId)
-        .single();
+        .rpc('is_client_account', { user_id_param: userId });
 
       if (error) {
         console.error('Error checking client account status:', error);
         return false;
       }
 
-      return data?.account_type === 'client';
+      return data || false;
     } catch (error) {
       console.error('Exception checking client account status:', error);
       return false;
@@ -26,91 +23,69 @@ export class SimplifiedClientDiagnostics {
   }
 
   /**
-   * Ensure a client record exists
+   * Ensure a client record exists using RPC function
    */
   static async ensureClientRecord(userId: string, email: string, metadata: any = {}) {
     try {
       console.log('Ensuring client record for:', userId, email);
 
-      // First, ensure account type is set to client
-      const { error: accountTypeError } = await supabase
-        .from('account_types')
-        .upsert({
-          auth_user_id: userId,
-          account_type: 'client'
-        }, {
-          onConflict: 'auth_user_id'
+      const { data, error } = await supabase
+        .rpc('ensure_client_account', {
+          user_id_param: userId,
+          company_name_param: metadata.companyName || 'My Company',
+          first_name_param: metadata.firstName || '',
+          last_name_param: metadata.lastName || ''
         });
 
-      if (accountTypeError) {
-        console.error('Error setting account type:', accountTypeError);
-        return { success: false, error: accountTypeError.message };
+      if (error) {
+        console.error('Error creating client record:', error);
+        return { success: false, error: error.message };
       }
 
-      // Then, ensure client record exists in client_workflow schema
-      const fullName = metadata.firstName && metadata.lastName 
-        ? `${metadata.firstName} ${metadata.lastName}`.trim()
-        : null;
-
-      const { error: clientError } = await supabase
-        .from('client_workflow.clients')
-        .upsert({
-          auth_user_id: userId,
-          email,
-          full_name: fullName,
-          first_name: metadata.firstName || null,
-          last_name: metadata.lastName || null,
-          company_name: metadata.companyName || 'My Company'
-        }, {
-          onConflict: 'auth_user_id'
-        });
-
-      if (clientError) {
-        console.error('Error creating client record:', clientError);
-        return { success: false, error: clientError.message };
-      }
-
-      return { success: true };
+      return { 
+        success: data?.success || true,
+        data: data
+      };
     } catch (error) {
       console.error('Exception ensuring client record:', error);
-      return { success: false, error: error.message };
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 
   /**
-   * Get client profile information
+   * Get client profile information using account status
    */
   static async getClientProfile(userId: string) {
     try {
-      const { data, error } = await supabase
-        .from('client_workflow.clients')
-        .select('*')
-        .eq('auth_user_id', userId)
-        .single();
+      const { data: debugInfo, error } = await supabase
+        .rpc('get_user_debug_info', { user_id_param: userId });
 
       if (error) {
         console.error('Error fetching client profile:', error);
         return { success: false, error: error.message, data: null };
       }
 
-      return { success: true, data };
+      return { success: true, data: debugInfo };
     } catch (error) {
       console.error('Exception fetching client profile:', error);
-      return { success: false, error: error.message, data: null };
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error', data: null };
     }
   }
 
   /**
-   * Update client profile
+   * Update client profile using RPC function
    */
   static async updateClientProfile(userId: string, profileData: any) {
     try {
       const { data, error } = await supabase
-        .from('client_workflow.clients')
-        .update(profileData)
-        .eq('auth_user_id', userId)
-        .select()
-        .single();
+        .rpc('save_complete_client_profile', {
+          user_id_param: userId,
+          company_name_param: profileData.company_name || 'My Company',
+          full_name_param: profileData.full_name || ''
+        });
 
       if (error) {
         console.error('Error updating client profile:', error);
@@ -120,7 +95,10 @@ export class SimplifiedClientDiagnostics {
       return { success: true, data };
     } catch (error) {
       console.error('Exception updating client profile:', error);
-      return { success: false, error: error.message };
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 
@@ -129,26 +107,74 @@ export class SimplifiedClientDiagnostics {
    */
   static async checkProfileCompletion(userId: string) {
     try {
-      const profile = await this.getClientProfile(userId);
-      
-      if (!profile.success || !profile.data) {
-        return { success: false, isComplete: false, error: 'Profile not found' };
+      const { data: isComplete, error } = await supabase
+        .rpc('is_profile_complete', { user_id_param: userId });
+
+      if (error) {
+        console.error('Error checking profile completion:', error);
+        return { success: false, isComplete: false, error: error.message };
       }
 
-      const requiredFields = [
-        'email',
-        'company_name',
-        'full_name'
-      ];
-
-      const isComplete = requiredFields.every(field => 
-        profile.data[field] && profile.data[field].trim() !== ''
-      );
-
-      return { success: true, isComplete };
+      return { success: true, isComplete: isComplete || false };
     } catch (error) {
       console.error('Exception checking profile completion:', error);
-      return { success: false, isComplete: false, error: error.message };
+      return { 
+        success: false, 
+        isComplete: false, 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Check user account status
+   */
+  static async checkUserAccountStatus(userId: string) {
+    try {
+      const { data: debugInfo, error } = await supabase
+        .rpc('get_user_debug_info', { user_id_param: userId });
+
+      if (error) {
+        console.error('Error checking user account status:', error);
+        return { success: false, error: error.message, data: null };
+      }
+
+      return { 
+        success: true, 
+        data: {
+          isClient: debugInfo?.account_type_info?.account_type === 'client',
+          accountType: debugInfo?.account_type_info?.account_type,
+          debugInfo
+        }
+      };
+    } catch (error) {
+      console.error('Exception checking user account status:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        data: null
+      };
+    }
+  }
+
+  /**
+   * Log diagnostic event
+   */
+  static async logDiagnosticEvent(event: string, data: any) {
+    try {
+      await supabase
+        .from('error_logs')
+        .insert({
+          error_type: 'diagnostic_event',
+          error_message: event,
+          context: 'simplified_client_diagnostics',
+          metadata: {
+            event_data: data,
+            timestamp: new Date().toISOString()
+          }
+        });
+    } catch (error) {
+      console.error('Failed to log diagnostic event:', error);
     }
   }
 }
