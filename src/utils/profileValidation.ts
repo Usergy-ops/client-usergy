@@ -1,5 +1,5 @@
 
-import { supabase } from '@/integrations/supabase/client';
+import { ClientAccountService } from '@/services/ClientAccountService';
 
 interface ProfileCompletionResult {
   isComplete: boolean;
@@ -12,23 +12,20 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
   try {
     console.log('Checking profile completion for user:', userId);
     
-    // Use RPC function to check if profile is complete
-    const { data: isComplete, error } = await supabase
-      .rpc('is_profile_complete', { user_id_param: userId });
-
-    if (error) {
-      console.error('Error checking profile completion:', error);
+    const result = await ClientAccountService.checkProfileCompletion(userId);
+    
+    if (!result.success) {
       return {
         isComplete: false,
-        error: error.message
+        error: result.error,
+        missingFields: ['Profile information incomplete']
       };
     }
 
-    // Get basic completion info (simplified)
     return {
-      isComplete: isComplete || false,
-      completionPercentage: isComplete ? 100 : 0,
-      missingFields: isComplete ? [] : ['Profile information incomplete']
+      isComplete: result.data?.isComplete || false,
+      completionPercentage: result.data?.isComplete ? 100 : 0,
+      missingFields: result.data?.isComplete ? [] : ['Profile information incomplete']
     };
 
   } catch (error) {
@@ -45,36 +42,12 @@ export async function updateClientProfile(userId: string, profileData: any) {
   try {
     console.log('Updating client profile for user:', userId, profileData);
 
-    // Use RPC function to save complete client profile
-    const { data, error } = await supabase
-      .rpc('save_complete_client_profile', {
-        user_id_param: userId,
-        company_name_param: profileData.company_name || 'My Company',
-        full_name_param: profileData.full_name || '',
-        company_website_param: profileData.company_website,
-        industry_param: profileData.industry,
-        company_size_param: profileData.company_size,
-        contact_role_param: profileData.contact_role,
-        contact_phone_param: profileData.contact_phone,
-        company_country_param: profileData.company_country,
-        company_city_param: profileData.company_city,
-        company_timezone_param: profileData.company_timezone
-      });
-
-    if (error) {
-      console.error('Error updating client profile:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-
-    // Type cast the data as an object with success property
-    const result = data as { success?: boolean } | null;
+    const result = await ClientAccountService.updateProfile(userId, profileData);
     
     return {
-      success: result?.success || true,
-      data: result
+      success: result.success,
+      error: result.error,
+      data: result.data
     };
 
   } catch (error) {

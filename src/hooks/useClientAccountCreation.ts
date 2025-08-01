@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
+import { useErrorLogger } from './useErrorLogger';
 
 interface ClientAccountCreationState {
   isCreating: boolean;
@@ -21,7 +22,9 @@ export function useClientAccountCreation() {
     error: null,
   });
 
-  const createClientAccount = useCallback(async (userId: string, userMetadata: any) => {
+  const { logAuthError } = useErrorLogger();
+
+  const createClientAccount = useCallback(async (userId: string, userMetadata: any): Promise<CreateClientAccountResult> => {
     setState(prev => ({ ...prev, isCreating: true, error: null }));
 
     try {
@@ -47,6 +50,9 @@ export function useClientAccountCreation() {
     } catch (error) {
       console.error('Client account creation failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Account creation failed';
+      
+      await logAuthError(error, 'client_account_creation');
+      
       setState(prev => ({ 
         ...prev, 
         isCreating: false, 
@@ -54,7 +60,7 @@ export function useClientAccountCreation() {
       }));
       return { success: false, error: errorMessage };
     }
-  }, []);
+  }, [logAuthError]);
 
   const reset = useCallback(() => {
     setState({

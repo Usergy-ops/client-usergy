@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ClientAuthProvider } from "@/contexts/ClientAuthContext";
-import { EnhancedClientProtectedRoute } from "@/components/client/EnhancedClientProtectedRoute";
+import { ClientProtectedRoute } from "@/components/client/ClientProtectedRoute";
 import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import Welcome from "./pages/Welcome";
 import ProfileSetup from "./pages/ProfileSetup";
@@ -32,17 +32,17 @@ const AppContent = () => {
         <Route 
           path="/profile" 
           element={
-            <EnhancedClientProtectedRoute>
+            <ClientProtectedRoute>
               <ProfileSetup />
-            </EnhancedClientProtectedRoute>
+            </ClientProtectedRoute>
           } 
         />
         <Route 
           path="/dashboard" 
           element={
-            <EnhancedClientProtectedRoute>
+            <ClientProtectedRoute>
               <ClientDashboard />
-            </EnhancedClientProtectedRoute>
+            </ClientProtectedRoute>
           } 
         />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
