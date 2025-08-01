@@ -18,28 +18,45 @@ export function useOTPVerification() {
     setError('');
 
     try {
-      // Use the standard Supabase auth verifyOtp method for email verification
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otpCode,
-        type: 'signup'
+      console.log('Using unified auth system for OTP verification:', email);
+
+      // Use the unified auth system instead of standard Supabase auth
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'verify-otp',
+          email, 
+          otpCode, 
+          password 
+        }
       });
 
       if (error) {
+        console.error('Unified auth verification error:', error);
         setError('Verification failed. Please try again.');
-        return { success: false, error: { message: 'Verification failed' } };
+        return { success: false, error: { message: error.message || 'Verification failed' } };
       }
 
-      if (data.session) {
+      if (data?.success && data?.session) {
+        console.log('OTP verification successful via unified auth');
+        
+        // Set the session manually since we got it from the edge function
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+
         return { success: true, data };
       }
 
-      setError('Invalid verification code');
-      return { success: false, error: { message: 'Invalid verification code' } };
+      const errorMessage = data?.error || 'Invalid verification code. Please try again.';
+      setError(errorMessage);
+      return { success: false, error: { message: errorMessage } };
+
     } catch (error) {
-      console.error('OTP verification error:', error);
-      setError('Verification failed. Please try again.');
-      return { success: false, error: { message: 'Verification failed' } };
+      console.error('OTP verification exception:', error);
+      const errorMessage = 'Network error. Please check your connection and try again.';
+      setError(errorMessage);
+      return { success: false, error: { message: errorMessage } };
     } finally {
       setIsVerifying(false);
     }
@@ -50,22 +67,36 @@ export function useOTPVerification() {
     setError('');
 
     try {
-      // Use the standard Supabase auth resend method
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: email
+      console.log('Using unified auth system for OTP resend:', email);
+
+      // Use the unified auth system for resending
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'resend-otp',
+          email
+        }
       });
 
       if (error) {
+        console.error('Unified auth resend error:', error);
         setError('Failed to resend code. Please try again.');
-        return { success: false, error: { message: 'Failed to resend code' } };
+        return { success: false, error: { message: error.message || 'Failed to resend code' } };
       }
 
-      return { success: true, data: { message: 'Code resent successfully' } };
+      if (data?.success) {
+        console.log('OTP resend successful via unified auth');
+        return { success: true, data: { message: 'Code resent successfully' } };
+      }
+
+      const errorMessage = data?.error || 'Failed to resend code. Please try again.';
+      setError(errorMessage);
+      return { success: false, error: { message: errorMessage } };
+
     } catch (error) {
-      console.error('OTP resend error:', error);
-      setError('Failed to resend code. Please try again.');
-      return { success: false, error: { message: 'Failed to resend code' } };
+      console.error('OTP resend exception:', error);
+      const errorMessage = 'Failed to resend code. Please try again.';
+      setError(errorMessage);
+      return { success: false, error: { message: errorMessage } };
     } finally {
       setIsResending(false);
     }

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { CheckCircle, XCircle, Mail, Send, TestTube, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
+import { useEmailSystemTest } from '@/hooks/useEmailSystemTest';
 
 interface TestResult {
   test: string;
@@ -20,9 +20,10 @@ interface TestResult {
 
 export function EmailSystemTester() {
   const [testEmail, setTestEmail] = useState('');
-  const [testing, setTesting] = useState(false);
+  const [testOtpCode, setTestOtpCode] = useState('');
   const [results, setResults] = useState<TestResult[]>([]);
   const { toast } = useToast();
+  const { testing, testEmailDelivery, testOTPResend, testOTPVerification } = useEmailSystemTest();
 
   const addResult = (test: string, success: boolean, message: string, data?: any) => {
     const result: TestResult = {
@@ -36,177 +37,118 @@ export function EmailSystemTester() {
     return result;
   };
 
-  const testEdgeFunctionConnectivity = async (): Promise<TestResult> => {
-    try {
-      console.log('Testing unified-auth edge function connectivity...');
-      
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'signup',
-          email: 'test@example.com',
-          password: 'test123',
-          companyName: 'Test Company',
-          firstName: 'Test',
-          lastName: 'User',
-          accountType: 'client',
-          sourceUrl: window.location.origin
-        }
-      });
-
-      if (error) {
-        return addResult('Edge Function', false, `Edge function error: ${error.message}`, error);
-      }
-
-      return addResult('Edge Function', true, 'Edge function is accessible and responding', data);
-    } catch (error) {
-      console.error('Edge function connectivity test error:', error);
-      return addResult('Edge Function', false, `Connectivity failed: ${error instanceof Error ? error.message : 'Unknown error'}`, error);
-    }
-  };
-
-  const testEmailConfiguration = async (): Promise<TestResult> => {
-    try {
-      console.log('Testing email configuration...');
-      
-      // Test with a real email signup to check if Resend is configured
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'signup',
-          email: testEmail || 'noreply@example.com',
-          password: 'test123456',
-          companyName: 'Email Test Company',
-          firstName: 'Email',
-          lastName: 'Test',
-          accountType: 'client',
-          sourceUrl: window.location.origin
-        }
-      });
-
-      if (error) {
-        return addResult('Email Config', false, `Email configuration test failed: ${error.message}`, error);
-      }
-
-      if (data?.success) {
-        return addResult('Email Config', true, `Email system working. Email sent: ${data.emailSent || false}`, data);
-      }
-
-      return addResult('Email Config', false, 'Email configuration may have issues', data);
-    } catch (error) {
-      console.error('Email configuration test error:', error);
-      return addResult('Email Config', false, `Configuration test failed: ${error instanceof Error ? error.message : 'Unknown error'}`, error);
-    }
-  };
-
-  const testCompleteSignupFlow = async (): Promise<TestResult> => {
+  const runCompleteSignupTest = async () => {
     if (!testEmail || !testEmail.includes('@')) {
-      return addResult('Signup Flow', false, 'Valid test email required for signup flow test');
-    }
-
-    try {
-      console.log('Testing complete signup flow for:', testEmail);
-      
-      // Test the complete signup process
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'signup',
-          email: testEmail,
-          password: 'TestPassword123',
-          companyName: 'Flow Test Company',
-          firstName: 'Flow',
-          lastName: 'Test',
-          accountType: 'client',
-          sourceUrl: window.location.origin
-        }
-      });
-
-      if (error) {
-        return addResult('Signup Flow', false, `Signup flow failed: ${error.message}`, error);
-      }
-
-      if (data?.success) {
-        const message = data.emailSent 
-          ? 'Complete signup flow successful - verification email sent!' 
-          : 'Signup completed but email sending may have failed';
-        
-        return addResult('Signup Flow', data.emailSent || false, message, data);
-      }
-
-      return addResult('Signup Flow', false, 'Signup flow completed with issues', data);
-    } catch (error) {
-      console.error('Complete signup flow test error:', error);
-      return addResult('Signup Flow', false, `Flow test failed: ${error instanceof Error ? error.message : 'Unknown error'}`, error);
-    }
-  };
-
-  const testOTPResend = async (): Promise<TestResult> => {
-    if (!testEmail || !testEmail.includes('@')) {
-      return addResult('OTP Resend', false, 'Valid test email required for OTP resend test');
-    }
-
-    try {
-      console.log('Testing OTP resend for:', testEmail);
-      
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'resend-otp',
-          email: testEmail
-        }
-      });
-
-      if (error) {
-        return addResult('OTP Resend', false, `OTP resend failed: ${error.message}`, error);
-      }
-
-      if (data?.success) {
-        const message = data.emailSent 
-          ? 'OTP resend successful - new code sent!' 
-          : 'OTP generated but email sending may have failed';
-        
-        return addResult('OTP Resend', data.emailSent || false, message, data);
-      }
-
-      return addResult('OTP Resend', false, 'OTP resend completed with issues', data);
-    } catch (error) {
-      console.error('OTP resend test error:', error);
-      return addResult('OTP Resend', false, `Resend test failed: ${error instanceof Error ? error.message : 'Unknown error'}`, error);
-    }
-  };
-
-  const runAllTests = async () => {
-    setTesting(true);
-    setResults([]);
-    
-    try {
       toast({
-        title: "Running Email System Tests",
-        description: "Testing all components of the email delivery system...",
-      });
-
-      // Run tests in sequence
-      await testEdgeFunctionConnectivity();
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Brief delay between tests
-      
-      await testEmailConfiguration();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      await testCompleteSignupFlow();
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      await testOTPResend();
-
-      toast({
-        title: "Tests Completed",
-        description: "Check the results below for detailed information.",
-      });
-    } catch (error) {
-      console.error('Test suite error:', error);
-      toast({
-        title: "Test Suite Error",
-        description: "An error occurred while running tests.",
+        title: "Invalid Email",
+        description: "Please enter a valid email address for testing.",
         variant: "destructive"
       });
-    } finally {
-      setTesting(false);
+      return;
+    }
+
+    try {
+      toast({
+        title: "Running Complete Signup Test",
+        description: "Testing signup and email delivery...",
+      });
+
+      const result = await testEmailDelivery(testEmail);
+      addResult('Complete Signup Flow', result.success, result.message, result.data);
+
+      if (result.success) {
+        toast({
+          title: "Signup Test Successful",
+          description: "Check your email for the OTP code, then test verification below.",
+        });
+      } else {
+        toast({
+          title: "Signup Test Failed",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Signup test error:', error);
+      addResult('Complete Signup Flow', false, 'Test failed with exception', error);
+      toast({
+        title: "Test Error",
+        description: "An error occurred during testing.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const runOTPResendTest = async () => {
+    if (!testEmail || !testEmail.includes('@')) {
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid email address for testing.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const result = await testOTPResend(testEmail);
+      addResult('OTP Resend', result.success, result.message, result.data);
+
+      if (result.success) {
+        toast({
+          title: "OTP Resend Successful",
+          description: "A new verification code has been sent.",
+        });
+      } else {
+        toast({
+          title: "OTP Resend Failed",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('OTP resend test error:', error);
+      addResult('OTP Resend', false, 'Resend test failed with exception', error);
+    }
+  };
+
+  const runOTPVerificationTest = async () => {
+    if (!testEmail || !testEmail.includes('@')) {
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid email address for testing.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!testOtpCode || testOtpCode.length !== 6) {
+      toast({
+        title: "Invalid OTP",
+        description: "Please enter a valid 6-digit OTP code.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const result = await testOTPVerification(testEmail, testOtpCode);
+      addResult('OTP Verification', result.success, result.message, result.data);
+
+      if (result.success) {
+        toast({
+          title: "OTP Verification Successful",
+          description: "The verification code was accepted.",
+        });
+      } else {
+        toast({
+          title: "OTP Verification Failed",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('OTP verification test error:', error);
+      addResult('OTP Verification', false, 'Verification test failed with exception', error);
     }
   };
 
@@ -253,24 +195,75 @@ export function EmailSystemTester() {
               Enter a real email address to receive test verification emails
             </p>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="testOtpCode">OTP Code (for verification test)</Label>
+            <Input
+              id="testOtpCode"
+              type="text"
+              value={testOtpCode}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setTestOtpCode(value);
+              }}
+              placeholder="123456"
+              maxLength={6}
+              className="usergy-input text-center font-mono tracking-widest"
+            />
+            <p className="text-xs text-muted-foreground">
+              Enter the 6-digit code from your email to test verification
+            </p>
+          </div>
           
-          <Button 
-            onClick={runAllTests}
-            disabled={testing}
-            className="w-full usergy-btn-primary"
-          >
-            {testing ? (
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                <span>Running Tests...</span>
-              </div>
-            ) : (
-              <div className="flex items-center space-x-2">
-                <Send className="w-4 h-4" />
-                <span>Run Complete Test Suite</span>
-              </div>
-            )}
-          </Button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Button 
+              onClick={runCompleteSignupTest}
+              disabled={testing}
+              className="usergy-btn-primary"
+            >
+              {testing ? (
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  <span>Testing...</span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <Send className="w-4 h-4" />
+                  <span>Test Signup</span>
+                </div>
+              )}
+            </Button>
+
+            <Button 
+              onClick={runOTPResendTest}
+              disabled={testing}
+              variant="outline"
+            >
+              {testing ? (
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
+                  <span>Testing...</span>
+                </div>
+              ) : (
+                'Test Resend'
+              )}
+            </Button>
+
+            <Button 
+              onClick={runOTPVerificationTest}
+              disabled={testing}
+              variant="outline"
+            >
+              {testing ? (
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
+                  <span>Testing...</span>
+                </div>
+              ) : (
+                'Test Verification'
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -327,14 +320,14 @@ export function EmailSystemTester() {
         <CardHeader>
           <CardTitle className="flex items-center space-x-2 text-yellow-800">
             <AlertTriangle className="w-5 h-5" />
-            <span>Important Notes</span>
+            <span>Testing Instructions</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-yellow-700 space-y-2">
-          <p>• Make sure your domain is verified in Resend if using a custom from address</p>
-          <p>• Check spam/junk folders if test emails don't arrive in inbox</p>
-          <p>• Email delivery may take 30-60 seconds in some cases</p>
-          <p>• Use a real email address you can access for accurate testing</p>
+          <p><strong>1. Test Signup:</strong> Enter your email and click "Test Signup" to receive an OTP</p>
+          <p><strong>2. Check Email:</strong> Look for the 6-digit code in your inbox (check spam folder too)</p>
+          <p><strong>3. Test Verification:</strong> Enter the OTP code and click "Test Verification"</p>
+          <p><strong>4. Test Resend:</strong> Use "Test Resend" to get a new code if needed</p>
         </CardContent>
       </Card>
     </div>

@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Mail, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { useEnhancedClientAuth } from '@/contexts/EnhancedClientAuthContext';
+import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface ImprovedOTPVerificationProps {
   email: string;
@@ -22,7 +22,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
   const [success, setSuccess] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { verifyOTP } = useEnhancedClientAuth();
+  const { verifyOTP } = useClientAuth();
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus on input
@@ -44,9 +44,11 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
     setError('');
 
     try {
+      console.log('Starting OTP verification via client auth context...');
       const result = await verifyOTP(email, otpCode, password);
       
       if (result.success) {
+        console.log('OTP verification successful');
         setSuccess(true);
         toast({
           title: "Email Verified!",
@@ -58,6 +60,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
           navigate('/dashboard');
         }, 1500);
       } else {
+        console.error('OTP verification failed:', result.error);
         setError(result.error || 'Invalid verification code. Please try again.');
       }
     } catch (error) {
@@ -73,15 +76,16 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
     setError('');
     
     try {
-      const { data, error } = await fetch('/api/client-auth-handler/resend-otp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      }).then(res => res.json());
+      console.log('Starting OTP resend via unified auth...');
       
-      if (error) {
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'resend-otp',
+          email
+        }
+      });
+      
+      if (error || !data?.success) {
         setError('Failed to resend code. Please try again.');
       } else {
         toast({

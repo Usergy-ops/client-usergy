@@ -108,9 +108,56 @@ export function useEmailSystemTest() {
     }
   };
 
+  const testOTPVerification = async (email: string, otpCode: string): Promise<EmailTestResult> => {
+    setTesting(true);
+    
+    try {
+      console.log('Testing OTP verification for:', email, 'with code:', otpCode);
+      
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: { 
+          action: 'verify-otp',
+          email,
+          otpCode,
+          password: 'TestPassword123'
+        }
+      });
+
+      if (error) {
+        console.error('OTP verification test error:', error);
+        return {
+          success: false,
+          message: 'OTP verification test failed',
+          error: error.message
+        };
+      }
+
+      const success = data?.success;
+      
+      return {
+        success,
+        message: success 
+          ? 'OTP verification test successful!' 
+          : data?.error || 'OTP verification failed',
+        data
+      };
+
+    } catch (error) {
+      console.error('OTP verification test exception:', error);
+      return {
+        success: false,
+        message: 'Network error during OTP verification test',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return {
     testing,
     testEmailDelivery,
-    testOTPResend
+    testOTPResend,
+    testOTPVerification
   };
 }
