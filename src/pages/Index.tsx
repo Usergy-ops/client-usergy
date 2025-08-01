@@ -1,23 +1,23 @@
-// src/pages/Index.tsx
+
 import { useEffect } from 'react';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useClientAuth } from '@/contexts/ClientAuthContext';
+import Welcome from './Welcome';
 
 const Index = () => {
-  const { user, isClientAccount, loading } = useClientAuth();
   const navigate = useNavigate();
+  const { user, isClientAccount, loading } = useClientAuth();
 
   useEffect(() => {
+    // Auto-redirect authenticated client users to dashboard
     if (!loading && user && isClientAccount) {
-      // Clear, deterministic redirect logic
-      const redirectUrl = 'https://client.usergy.ai/profile';
-      
-      console.log(`Redirecting client to ${redirectUrl}`);
-      window.location.href = redirectUrl;
+      console.log('Index: Authenticated client user detected, redirecting to dashboard');
+      navigate('/dashboard', { replace: true });
     }
-  }, [user, isClientAccount, loading]);
+  }, [user, isClientAccount, loading, navigate]);
 
-  // ... rest of component
+  // Show Welcome page for non-authenticated users or while loading
+  return <Welcome />;
 };
 
 export default Index;

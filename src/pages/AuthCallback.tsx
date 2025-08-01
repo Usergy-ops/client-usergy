@@ -1,72 +1,86 @@
-// src/pages/AuthCallback.tsx (User Project)
-import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
-import { useToast } from '@/hooks/use-toast';
 
-const AuthCallback = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '@/lib/supabase'
+
+export default function AuthCallback() {
+  const navigate = useNavigate()
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // Get stored account type
+        const accountType = localStorage.getItem('pending_account_type') || 'client'
+        const sourceUrl = localStorage.getItem('pending_source_url') || window.location.origin
         
-        if (error) {
-          throw error;
+        console.log('AuthCallback: Processing auth callback with account type:', accountType)
+        
+        // Update user metadata with account type
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        
+        if (userError) {
+          console.error('AuthCallback: Error getting user:', userError)
+          navigate('/')
+          return
         }
-
-        if (session) {
-          // Get stored account type info
-          const pendingAccountType = localStorage.getItem('pending_account_type');
-          const pendingSourceUrl = localStorage.getItem('pending_source_url');
+        
+        if (user && !user.user_metadata.account_type) {
+          console.log('AuthCallback: Updating user metadata for user:', user.id)
           
-          // Clean up
-          localStorage.removeItem('pending_account_type');
-          localStorage.removeItem('pending_source_url');
+          const { error: updateError } = await supabase.auth.updateUser({
+            data: {
+              account_type: accountType,
+              source_url: sourceUrl
+            }
+          })
           
-          // Update user metadata with account type
-          if (pendingAccountType) {
-            await supabase.auth.updateUser({
-              data: {
-                account_type: pendingAccountType,
-                source_domain: pendingSourceUrl
-              }
-            });
+          if (updateError) {
+            console.error('AuthCallback: Error updating user metadata:', updateError)
           }
           
-          // Redirect based on account type
-          if (pendingAccountType === 'user') {
-            window.location.href = 'https://user.usergy.ai/profile-completion';
-          } else {
-            window.location.href = 'https://client.usergy.ai/profile';
+          // Store account type in account_types table for consistency
+          const { error: accountTypeError } = await supabase
+            .from('account_types')
+            .upsert({
+              auth_user_id: user.id,
+              account_type: accountType
+            })
+            
+          if (accountTypeError) {
+            console.error('AuthCallback: Error storing account type:', accountTypeError)
           }
-        } else {
-          navigate('/');
         }
+        
+        // Clean up localStorage
+        localStorage.removeItem('pending_account_type')
+        localStorage.removeItem('pending_source_url')
+        
+        // Always redirect to profile page for both account types
+        console.log('AuthCallback: Redirecting to profile page')
+        navigate('/profile')
+        
       } catch (error) {
-        console.error('Auth callback error:', error);
-        toast({
-          title: "Authentication Error",
-          description: "Something went wrong. Please try again.",
-          variant: "destructive"
-        });
-        navigate('/');
+        console.error('AuthCallback: Exception during callback handling:', error)
+        navigate('/')
       }
-    };
+    }
 
-    handleCallback();
-  }, [navigate, toast]);
+    handleCallback()
+  }, [navigate])
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-lg">Completing authentication...</p>
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="glass-card p-8 text-center">
+        <div className="flex items-center justify-center space-x-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div>
+            <span className="text-lg font-semibold">Processing authentication...</span>
+            <p className="text-sm text-muted-foreground mt-1">Please wait while we complete your sign in</p>
+          </div>
+        </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default AuthCallback;
+export { AuthCallback }

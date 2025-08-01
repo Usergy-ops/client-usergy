@@ -1,135 +1,166 @@
 
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { retryOperation, isRetryableError } from '@/utils/retryUtility';
+import { useEnhancedErrorLogger } from './useEnhancedErrorLogger';
 
-interface OTPVerificationState {
-  isVerifying: boolean;
-  isResending: boolean;
-  error: string | null;
-  isSuccess: boolean;
+interface OTPVerificationResult {
+  success: boolean;
+  error?: { message: string };
+  data?: any;
 }
 
 export function useOTPVerification() {
-  const [state, setState] = useState<OTPVerificationState>({
-    isVerifying: false,
-    isResending: false,
-    error: null,
-    isSuccess: false,
-  });
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [error, setError] = useState<string>('');
+  const { logOTPError } = useEnhancedErrorLogger();
 
-  const verifyOTP = useCallback(async (email: string, otpCode: string) => {
-    setState(prev => ({ ...prev, isVerifying: true, error: null }));
-
-    try {
-      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/client-auth-handler`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
-        },
-        body: JSON.stringify({ 
-          action: 'verify-otp',
-          email, 
-          otpCode 
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setState(prev => ({ 
-          ...prev, 
-          isVerifying: false, 
-          error: 'Invalid verification code. Please try again.' 
-        }));
-        return { success: false, error: data.error };
-      }
-
-      if (data && data.success) {
-        setState(prev => ({ 
-          ...prev, 
-          isVerifying: false, 
-          isSuccess: true 
-        }));
-        return { success: true, data };
-      } else {
-        setState(prev => ({ 
-          ...prev, 
-          isVerifying: false, 
-          error: data?.error || 'Invalid verification code. Please try again.' 
-        }));
-        return { success: false, error: data?.error };
-      }
-    } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        isVerifying: false, 
-        error: 'An error occurred. Please try again.' 
-      }));
-      return { success: false, error };
-    }
-  }, []);
-
-  const resendOTP = useCallback(async (email: string) => {
-    setState(prev => ({ ...prev, isResending: true, error: null }));
+  const verifyOTP = async (email: string, otpCode: string, password?: string): Promise<OTPVerificationResult> => {
+    setIsVerifying(true);
+    setError('');
 
     try {
-      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/client-auth-handler`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
+      console.log('Using unified auth system for OTP verification:', email);
+
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'verify-otp',
+              email, 
+              otpCode, 
+              password 
+            }
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          return data;
         },
-        body: JSON.stringify({ 
-          action: 'resend-otp',
-          email 
-        })
-      });
+        { maxRetries: 3, delay: 1000 }
+      );
 
-      const data = await response.json();
+      if (result?.success && result?.session) {
+        console.log('OTP verification successful via unified auth');
+        
+        // Set the session manually since we got it from the edge function
+        await supabase.auth.setSession({
+          access_token: result.session.access_token,
+          refresh_token: result.session.refresh_token
+        });
 
-      if (!response.ok) {
-        setState(prev => ({ 
-          ...prev, 
-          isResending: false, 
-          error: 'Failed to resend verification code. Please try again.' 
-        }));
-        return { success: false, error: data.error };
+        return { success: true, data: result };
       }
 
-      if (data && data.success) {
-        setState(prev => ({ ...prev, isResending: false }));
-        return { success: true };
-      } else {
-        setState(prev => ({ 
-          ...prev, 
-          isResending: false, 
-          error: 'Failed to resend verification code. Please try again.' 
-        }));
-        return { success: false, error: data?.error };
-      }
+      const errorMessage = result?.error || 'Invalid verification code. Please try again.';
+      setError(errorMessage);
+      
+      await logOTPError(
+        new Error(errorMessage),
+        'verification_failed',
+        email,
+        { otpCode: otpCode.slice(0, 2) + '****' }
+      );
+      
+      return { success: false, error: { message: errorMessage } };
+
     } catch (error) {
-      setState(prev => ({ 
-        ...prev, 
-        isResending: false, 
-        error: 'Failed to resend verification code. Please try again.' 
-      }));
-      return { success: false, error };
+      console.error('OTP verification exception:', error);
+      
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (error?.message?.includes('Invalid or expired')) {
+        errorMessage = 'Invalid or expired verification code. Please try again or request a new code.';
+      } else if (error?.message?.includes('User already exists')) {
+        errorMessage = 'This email is already registered. Please try signing in instead.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
+      await logOTPError(error, 'verification_exception', email, {
+        errorType: typeof error,
+        isRetryable: isRetryableError(error)
+      });
+      
+      setError(errorMessage);
+      return { success: false, error: { message: errorMessage } };
+    } finally {
+      setIsVerifying(false);
     }
-  }, []);
+  };
 
-  const reset = useCallback(() => {
-    setState({
-      isVerifying: false,
-      isResending: false,
-      error: null,
-      isSuccess: false,
-    });
-  }, []);
+  const resendOTP = async (email: string): Promise<OTPVerificationResult> => {
+    setIsResending(true);
+    setError('');
+
+    try {
+      console.log('Using unified auth system for OTP resend:', email);
+
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'resend-otp',
+              email
+            }
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          return data;
+        },
+        { maxRetries: 2, delay: 1500 }
+      );
+
+      if (result?.success) {
+        console.log('OTP resend successful via unified auth');
+        return { success: true, data: { message: 'Code resent successfully' } };
+      }
+
+      const errorMessage = result?.error || 'Failed to resend code. Please try again.';
+      setError(errorMessage);
+      
+      await logOTPError(
+        new Error(errorMessage),
+        'resend_failed',
+        email
+      );
+      
+      return { success: false, error: { message: errorMessage } };
+
+    } catch (error) {
+      console.error('OTP resend exception:', error);
+      
+      const errorMessage = isRetryableError(error) 
+        ? 'Service temporarily unavailable. Please try again in a moment.'
+        : 'Failed to resend code. Please try again.';
+      
+      await logOTPError(error, 'resend_exception', email, {
+        isRetryable: isRetryableError(error)
+      });
+      
+      setError(errorMessage);
+      return { success: false, error: { message: errorMessage } };
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  const reset = () => {
+    setError('');
+  };
 
   return {
-    ...state,
+    isVerifying,
+    isResending,
+    error,
     verifyOTP,
     resendOTP,
-    reset,
+    reset
   };
 }

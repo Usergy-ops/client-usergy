@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NetworkNodes } from '@/components/client/NetworkNodes';
@@ -7,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Building, Globe, MapPin, Phone, Upload, Clock } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 interface CompanyProfile {
@@ -21,6 +22,13 @@ interface CompanyProfile {
   companyCity: string;
   companyTimezone: string;
   companyLogo?: File;
+  fullName: string;
+}
+
+interface ProfileSaveResponse {
+  success: boolean;
+  error?: string;
+  message?: string;
 }
 
 const industries = [
@@ -91,6 +99,7 @@ export default function ProfileSetup() {
     companyCountry: '',
     companyCity: '',
     companyTimezone: '',
+    fullName: ''
   });
 
   const updateFormData = (field: keyof CompanyProfile, value: string | File) => {
@@ -121,30 +130,35 @@ export default function ProfileSetup() {
   };
 
   const uploadLogo = async (file: File): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user?.id}/logo.${fileExt}`;
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user?.id}/logo.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('profile-pictures')
-      .upload(fileName, file, { upsert: true });
+      const { error: uploadError } = await supabase.storage
+        .from('profile-pictures')
+        .upload(fileName, file, { upsert: true });
 
-    if (uploadError) {
-      console.error('Logo upload error:', uploadError);
+      if (uploadError) {
+        console.error('Logo upload error:', uploadError);
+        return null;
+      }
+
+      const { data } = supabase.storage
+        .from('profile-pictures')
+        .getPublicUrl(fileName);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Logo upload exception:', error);
       return null;
     }
-
-    const { data } = supabase.storage
-      .from('profile-pictures')
-      .getPublicUrl(fileName);
-
-    return data.publicUrl;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate required fields
-    const requiredFields = ['companyName', 'industry', 'companySize', 'contactRole', 'companyCountry', 'companyCity', 'companyTimezone'];
+    const requiredFields = ['companyName', 'industry', 'companySize', 'contactRole', 'companyCountry', 'companyCity', 'companyTimezone', 'fullName'];
     const missingFields = requiredFields.filter(field => !formData[field as keyof CompanyProfile]);
     
     if (missingFields.length > 0) {
@@ -160,28 +174,61 @@ export default function ProfileSetup() {
         logoUrl = await uploadLogo(formData.companyLogo);
       }
 
-      const { error } = await supabase
-        .from('client_workspace.company_profiles')
-        .insert({
-          auth_user_id: user?.id,
-          company_name: formData.companyName,
-          company_website: formData.websiteUrl || null,
-          industry: formData.industry,
-          company_size: formData.companySize,
-          contact_role: formData.contactRole,
-          contact_phone: formData.contactPhone || null,
-          company_country: formData.companyCountry,
-          company_city: formData.companyCity,
-          company_timezone: formData.companyTimezone,
-          company_logo_url: logoUrl,
-          onboarding_status: 'completed'
-        });
+      console.log('Saving complete client profile with data:', {
+        user_id: user?.id,
+        company_name: formData.companyName,
+        full_name: formData.fullName,
+        company_website: formData.websiteUrl || null,
+        industry: formData.industry,
+        company_size: formData.companySize,
+        contact_role: formData.contactRole,
+        contact_phone: formData.contactPhone || null,
+        company_country: formData.companyCountry,
+        company_city: formData.companyCity,
+        company_timezone: formData.companyTimezone,
+        company_logo_url: logoUrl
+      });
 
-      if (error) throw error;
+      // Use the new save_complete_client_profile function
+      const { data, error } = await supabase.rpc('save_complete_client_profile', {
+        user_id_param: user?.id,
+        company_name_param: formData.companyName,
+        full_name_param: formData.fullName,
+        company_website_param: formData.websiteUrl || null,
+        industry_param: formData.industry,
+        company_size_param: formData.companySize,
+        contact_role_param: formData.contactRole,
+        contact_phone_param: formData.contactPhone || null,
+        company_country_param: formData.companyCountry,
+        company_city_param: formData.companyCity,
+        company_timezone_param: formData.companyTimezone,
+        company_logo_url_param: logoUrl
+      });
+
+      if (error) {
+        console.error('Error saving client profile:', error);
+        throw error;
+      }
+
+      // Properly handle the response type by converting to unknown first
+      const response = data as unknown as ProfileSaveResponse;
+      
+      if (response && typeof response === 'object' && response !== null && 'success' in response) {
+        if (!response.success) {
+          console.error('Profile save failed:', response.error);
+          throw new Error(response.error || 'Failed to save profile');
+        }
+      } else {
+        // If response is not in expected format, assume success if no error was thrown
+        console.log('Profile save response (unexpected format):', data);
+      }
+
+      console.log('Client profile saved successfully:', data);
 
       // Navigate to dashboard
       navigate('/dashboard');
     } catch (error: any) {
+      console.error('Profile setup error:', error);
       setError(error.message || 'Failed to save profile');
     } finally {
       setLoading(false);
@@ -210,6 +257,28 @@ export default function ProfileSetup() {
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
+
+          {/* Personal Information */}
+          <div className="glass-card p-6 space-y-6 animate-in fade-in-0 slide-in-from-bottom-2">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Building className="h-5 w-5 text-primary" />
+              Personal Information
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="fullName">Full Name *</Label>
+                <Input
+                  id="fullName"
+                  value={formData.fullName}
+                  onChange={(e) => updateFormData('fullName', e.target.value)}
+                  placeholder="John Smith"
+                  className="usergy-input"
+                  required
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Company Information */}
           <div className="glass-card p-6 space-y-6 animate-in fade-in-0 slide-in-from-bottom-2">

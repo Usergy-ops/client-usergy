@@ -2,52 +2,51 @@
 import { supabase } from '@/integrations/supabase/client';
 
 export function useErrorLogger() {
-  const logAuthError = async (error: any, context: string) => {
+  const logOTPError = async (error: unknown, errorType: string, email?: string) => {
     try {
-      const errorData = {
-        error_type: 'auth_error',
-        error_message: error?.message || 'Unknown error',
-        error_stack: error?.stack || null,
-        context,
-        user_id: null,
-        metadata: {
-          timestamp: new Date().toISOString(),
-          error_code: error?.code || null,
-          error_details: error?.details || null,
-          user_agent: navigator.userAgent,
-          url: window.location.href
-        }
-      };
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      await supabase
+        .from('error_logs')
+        .insert({
+          error_type: errorType,
+          error_message: errorMessage,
+          context: 'otp_verification',
+          metadata: {
+            email,
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent
+          }
+        });
+    } catch (logError) {
+      console.error('Failed to log error:', logError);
+    }
+  };
 
-      await supabase.from('error_logs').insert(errorData);
+  const logAuthError = async (error: unknown, errorType: string, context?: string) => {
+    try {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      await supabase
+        .from('error_logs')
+        .insert({
+          error_type: errorType,
+          error_message: errorMessage,
+          error_stack: errorStack,
+          context: context || 'authentication',
+          metadata: {
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent
+          }
+        });
     } catch (logError) {
       console.error('Failed to log auth error:', logError);
     }
   };
 
-  const logOTPError = async (error: any, context: string, email?: string) => {
-    try {
-      const errorData = {
-        error_type: 'otp_error',
-        error_message: error?.message || 'Unknown OTP error',
-        error_stack: error?.stack || null,
-        context,
-        user_id: null,
-        metadata: {
-          timestamp: new Date().toISOString(),
-          error_code: error?.code || null,
-          error_details: error?.details || null,
-          user_agent: navigator.userAgent,
-          url: window.location.href,
-          email: email || null
-        }
-      };
-
-      await supabase.from('error_logs').insert(errorData);
-    } catch (logError) {
-      console.error('Failed to log OTP error:', logError);
-    }
+  return { 
+    logOTPError,
+    logAuthError
   };
-
-  return { logAuthError, logOTPError };
 }

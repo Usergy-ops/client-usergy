@@ -1,252 +1,347 @@
-// src/contexts/ClientAuthContext.tsx
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
+import { retryOperation, isRetryableError } from '@/utils/retryUtility';
+
+interface SignUpResult {
+  success: boolean;
+  error?: string;
+  emailSent?: boolean;
+  accountType?: string;
+  debug?: any;
+}
+
+interface SignInResult {
+  success: boolean;
+  error?: string;
+  session?: any;
+}
+
+interface VerifyOTPResult {
+  success: boolean;
+  error?: string;
+  session?: any;
+}
 
 interface ClientAuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
   isClientAccount: boolean;
-  signUp: (email: string, password: string, companyData?: any) => Promise<{ error: string | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: () => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, metadata?: any) => Promise<SignUpResult>;
+  signIn: (email: string, password: string) => Promise<SignInResult>;
+  verifyOTP: (email: string, otpCode: string, password?: string) => Promise<VerifyOTPResult>;
   signOut: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  verifyOTP: (email: string, otp: string, password: string) => Promise<{ error: string | null }>;
-  diagnoseAccount: (userId: string) => Promise<any>;
 }
 
-// Create the context
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
 
-// Export the useClientAuth hook
-export const useClientAuth = () => {
-  const context = useContext(ClientAuthContext);
-  if (!context) {
-    throw new Error('useClientAuth must be used within a ClientAuthProvider');
-  }
-  return context;
-};
-
-// Export the provider
-export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export function ClientAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isClientAccount, setIsClientAccount] = useState(false);
+  const { toast } = useToast();
 
-  const checkClientAccount = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', userId)
-        .single();
-
-      if (!error && data) {
-        setIsClientAccount(data.account_type === 'client');
+  useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state change:', event, session?.user?.email);
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          // Check if user is a client account using the consolidated system
+          try {
+            const { data: accountTypeData, error } = await supabase
+              .from('account_types')
+              .select('account_type')
+              .eq('auth_user_id', session.user.id)
+              .single();
+            
+            const isClient = !error && accountTypeData?.account_type === 'client';
+            setIsClientAccount(isClient);
+            
+            // Enhanced post-authentication redirection
+            if (event === 'SIGNED_IN' && isClient) {
+              console.log('Client user signed in, preparing for redirection');
+              
+              // Small delay to ensure state is properly updated
+              setTimeout(() => {
+                const currentPath = window.location.pathname;
+                if (currentPath === '/' || currentPath === '/auth' || currentPath === '/login') {
+                  console.log('Redirecting to profile page after successful authentication');
+                  window.location.href = '/profile';
+                }
+              }, 1000);
+            }
+          } catch (error) {
+            console.error('Error checking client account:', error);
+            setIsClientAccount(false);
+          }
+        } else {
+          setIsClientAccount(false);
+        }
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          console.log('User signed in successfully:', session.user.email);
+        }
+        
+        if (event === 'SIGNED_OUT') {
+          console.log('User signed out');
+          setIsClientAccount(false);
+        }
       }
-    } catch (error) {
-      console.error('Error checking client account:', error);
-    }
-  }, []);
+    );
 
-  const diagnoseAccount = useCallback(async (userId: string) => {
-    try {
-      // Get user info from auth.users
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      
-      // Get account type info
-      const { data: accountType } = await supabase
-        .from('account_types')
-        .select('*')
-        .eq('auth_user_id', userId)
-        .single();
-
-      // Get profile info
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      // Get client info from the new client_workflow.clients table
-      const { data: clientInfo } = await supabase
-        .from('client_workflow.clients')
-        .select('*')
-        .eq('auth_user_id', userId)
-        .single();
-
-      // Check client account status using the RPC function
-      const { data: isClientResult } = await supabase.rpc('is_client_account', {
-        user_id_param: userId
-      });
-
-      return {
-        user_exists: !!authUser,
-        user_email: authUser?.email,
-        user_provider: authUser?.app_metadata?.provider,
-        account_type_exists: !!accountType,
-        account_type: accountType?.account_type,
-        profile_exists: !!profile,
-        client_info_exists: !!clientInfo,
-        client_company: clientInfo?.company_name,
-        client_full_name: clientInfo?.full_name,
-        is_client_account_result: isClientResult
-      };
-    } catch (error) {
-      console.error('Error diagnosing account:', error);
-      return {
-        user_exists: false,
-        user_email: null,
-        user_provider: null,
-        account_type_exists: false,
-        account_type: null,
-        profile_exists: false,
-        client_info_exists: false,
-        client_company: null,
-        client_full_name: null,
-        is_client_account_result: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }, []);
-
-  const refreshSession = useCallback(async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        await checkClientAccount(session.user.id);
-      }
-    } catch (error) {
-      console.error('Error refreshing session:', error);
-    }
-  }, [checkClientAccount]);
+      setLoading(false);
+    });
 
-  const signUp = async (email: string, password: string, companyData?: any) => {
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const signUp = async (email: string, password: string, metadata: any = {}): Promise<SignUpResult> => {
     try {
-      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/unified-auth`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
-        },
-        body: JSON.stringify({
-          action: 'signup',
-          email,
-          password,
-          source_domain: 'https://client.usergy.ai',
-          ...companyData
-        })
-      });
+      console.log('Starting unified signup process for:', email);
 
-      const data = await response.json();
-      if (!response.ok) {
-        return { error: data.error || 'Signup failed' };
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'signup',
+              email, 
+              password,
+              companyName: metadata.companyName || 'My Company',
+              firstName: metadata.firstName || '',
+              lastName: metadata.lastName || '',
+              accountType: metadata.accountType || 'client',
+              sourceUrl: window.location.origin
+            }
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          return data;
+        },
+        { maxRetries: 3, delay: 1000 }
+      );
+
+      console.log('Unified signup response:', result);
+
+      if (result?.success) {
+        return {
+          success: true,
+          emailSent: result.emailSent,
+          accountType: result.accountType,
+          debug: result.debug
+        };
       }
-      return { error: null };
+
+      return {
+        success: false,
+        error: result?.error || 'Signup failed. Please try again.'
+      };
+
     } catch (error) {
-      return { error: error instanceof Error ? error.message : 'An error occurred' };
+      console.error('Signup exception:', error);
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (error?.message?.includes('User already exists')) {
+        errorMessage = 'An account with this email already exists. Please try signing in instead.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
+      return {
+        success: false,
+        error: errorMessage
+      };
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string): Promise<SignInResult> => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        return { error: error.message };
-      }
-      return { error: null };
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          return data;
+        },
+        { maxRetries: 2, delay: 1000 }
+      );
+
+      return { success: true, session: result.session };
     } catch (error) {
-      return { error: error instanceof Error ? error.message : 'An error occurred' };
+      console.error('Sign in exception:', error);
+      
+      let errorMessage = 'Sign in failed. Please check your credentials and try again.';
+      
+      if (error?.message?.includes('Invalid login credentials')) {
+        errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (error?.message?.includes('Email not confirmed')) {
+        errorMessage = 'Please verify your email address before signing in.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  };
+
+  const verifyOTP = async (email: string, otpCode: string, password?: string): Promise<VerifyOTPResult> => {
+    try {
+      console.log('Starting unified OTP verification for:', email);
+
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'verify-otp',
+              email, 
+              otpCode, 
+              password 
+            }
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          return data;
+        },
+        { maxRetries: 2, delay: 1500 }
+      );
+
+      console.log('Unified OTP verification response:', result);
+
+      if (result?.success && result?.session) {
+        console.log('OTP verification successful, setting session');
+        
+        // Set the session manually since we got it from the edge function
+        await supabase.auth.setSession({
+          access_token: result.session.access_token,
+          refresh_token: result.session.refresh_token
+        });
+
+        return {
+          success: true,
+          session: result.session
+        };
+      }
+
+      let errorMessage = result?.error || 'Invalid verification code. Please try again.';
+      
+      if (result?.error?.includes('Invalid or expired')) {
+        errorMessage = 'Invalid or expired verification code. Please request a new code.';
+      }
+
+      return {
+        success: false,
+        error: errorMessage
+      };
+
+    } catch (error) {
+      console.error('OTP verification exception:', error);
+      
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (error?.message?.includes('Invalid or expired')) {
+        errorMessage = 'Invalid or expired verification code. Please try again or request a new code.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
+      return {
+        success: false,
+        error: errorMessage
+      };
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out error:', error);
+        toast({
+          title: "Error",
+          description: "Failed to sign out. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Sign out exception:', error);
     }
   };
 
   const signInWithGoogle = async () => {
     try {
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      
+      // Store account type for OAuth callback handling - always client for this context
+      localStorage.setItem('pending_account_type', 'client');
+      localStorage.setItem('pending_source_url', window.location.origin);
+      
+      console.log('Starting Google OAuth with redirect URL:', redirectUrl);
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent'
-          }
+          redirectTo: redirectUrl,
         }
       });
-      
+
       if (error) {
-        return { error: error.message };
+        console.error('Google sign in error:', error);
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
       }
-      return { error: null };
     } catch (error) {
-      return { error: error instanceof Error ? error.message : 'An error occurred' };
-    }
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-  };
-
-  const verifyOTP = async (email: string, otp: string, password: string) => {
-    try {
-      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/unified-auth`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
-        },
-        body: JSON.stringify({
-          action: 'verify',
-          email,
-          password,
-          otp,
-          source_domain: 'https://client.usergy.ai'
-        })
+      console.error('Google sign in exception:', error);
+      toast({
+        title: "Error",
+        description: "Failed to sign in with Google. Please try again.",
+        variant: "destructive",
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        return { error: data.error || 'Verification failed' };
-      }
-      
-      // Auto sign in after verification
-      await supabase.auth.signInWithPassword({ email, password });
-      return { error: null };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'An error occurred' };
     }
   };
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        checkClientAccount(session.user.id);
-      }
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        checkClientAccount(session.user.id);
+  const refreshSession = async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error('Session refresh error:', error);
       } else {
-        setIsClientAccount(false);
+        console.log('Session refreshed successfully');
       }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [checkClientAccount]);
+    } catch (error) {
+      console.error('Session refresh exception:', error);
+    }
+  };
 
   return (
     <ClientAuthContext.Provider
@@ -257,14 +352,21 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isClientAccount,
         signUp,
         signIn,
-        signInWithGoogle,
-        signOut,
-        refreshSession,
         verifyOTP,
-        diagnoseAccount,
+        signOut,
+        signInWithGoogle,
+        refreshSession,
       }}
     >
       {children}
     </ClientAuthContext.Provider>
   );
-};
+}
+
+export function useClientAuth() {
+  const context = useContext(ClientAuthContext);
+  if (context === undefined) {
+    throw new Error('useClientAuth must be used within a ClientAuthProvider');
+  }
+  return context;
+}

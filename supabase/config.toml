@@ -4,7 +4,7 @@ project_id = "lnsyrmpucmllakuuiixe"
 [api]
 enabled = true
 port = 54321
-schemas = ["public", "graphql_public"]
+schemas = ["public", "graphql_public", "client_workflow"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
@@ -55,7 +55,7 @@ enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
 
-[functions.client-auth-handler]
+[functions.unified-auth]
 verify_jwt = false
 
 [edge_runtime]
