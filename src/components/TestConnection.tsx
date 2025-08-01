@@ -57,23 +57,26 @@ export function TestConnection() {
     }
   };
 
-  const forceCreateAccount = async () => {
+  const ensureClientAccount = async () => {
     if (!user) return;
     
     try {
-      const { data: result, error } = await supabase.rpc('force_create_client_account', {
-        user_id_param: user.id
+      const { data: result, error } = await supabase.rpc('ensure_client_account', {
+        user_id_param: user.id,
+        company_name_param: 'Test Company',
+        first_name_param: 'Test',
+        last_name_param: 'User'
       });
       
       if (error) {
-        console.error('Force create error:', error);
+        console.error('Ensure client account error:', error);
       } else {
-        console.log('Force create result:', result);
-        // Re-run diagnostic after force create
+        console.log('Ensure client account result:', result);
+        // Re-run diagnostic after ensuring account
         await runDiagnostic();
       }
     } catch (error) {
-      console.error('Force create exception:', error);
+      console.error('Ensure client account exception:', error);
     }
   };
 
@@ -110,8 +113,8 @@ export function TestConnection() {
             Run Account Diagnostic
           </Button>
           
-          <Button onClick={forceCreateAccount} variant="outline" size="sm">
-            Force Create Client Account
+          <Button onClick={ensureClientAccount} variant="outline" size="sm">
+            Ensure Client Account
           </Button>
         </div>
       )}
@@ -126,8 +129,13 @@ export function TestConnection() {
             <div>Account Type Exists: {diagnosticInfo.account_type_exists ? '✓' : '✗'}</div>
             <div>Account Type: {diagnosticInfo.account_type}</div>
             <div>Profile Exists: {diagnosticInfo.profile_exists ? '✓' : '✗'}</div>
-            <div>Company: {diagnosticInfo.profile_company}</div>
+            <div>Client Info Exists: {diagnosticInfo.client_info_exists ? '✓' : '✗'}</div>
+            <div>Client Company: {diagnosticInfo.client_company}</div>
+            <div>Client Full Name: {diagnosticInfo.client_full_name}</div>
             <div>Is Client Account: {diagnosticInfo.is_client_account_result ? '✓' : '✗'}</div>
+            {diagnosticInfo.error && (
+              <div className="text-red-600">Error: {diagnosticInfo.error}</div>
+            )}
           </div>
         </div>
       )}

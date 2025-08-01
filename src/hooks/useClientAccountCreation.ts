@@ -21,7 +21,7 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId);
       
-      // Use the new ensure_client_account function
+      // Use the ensure_client_account function
       const { data: result, error } = await supabase.rpc('ensure_client_account', {
         user_id_param: userId,
         company_name_param: userMetadata?.companyName || 'My Company',

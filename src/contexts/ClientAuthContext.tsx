@@ -64,14 +64,21 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         .eq('auth_user_id', userId)
         .single();
 
-      // Get profile info (assuming there's a profiles table)
+      // Get profile info
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      // Check client account status
+      // Get client info from the new client_workflow.clients table
+      const { data: clientInfo } = await supabase
+        .from('client_workflow.clients')
+        .select('*')
+        .eq('auth_user_id', userId)
+        .single();
+
+      // Check client account status using the RPC function
       const { data: isClientResult } = await supabase.rpc('is_client_account', {
         user_id_param: userId
       });
@@ -83,7 +90,9 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         account_type_exists: !!accountType,
         account_type: accountType?.account_type,
         profile_exists: !!profile,
-        profile_company: profile?.company_name,
+        client_info_exists: !!clientInfo,
+        client_company: clientInfo?.company_name,
+        client_full_name: clientInfo?.full_name,
         is_client_account_result: isClientResult
       };
     } catch (error) {
@@ -95,7 +104,9 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         account_type_exists: false,
         account_type: null,
         profile_exists: false,
-        profile_company: null,
+        client_info_exists: false,
+        client_company: null,
+        client_full_name: null,
         is_client_account_result: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
