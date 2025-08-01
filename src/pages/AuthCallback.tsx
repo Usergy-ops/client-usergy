@@ -1,40 +1,44 @@
-// src/pages/AuthCallback.tsx (NEW FILE)
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/lib/supabase';
-import { Loader2 } from 'lucide-react';
+// src/pages/AuthCallback.tsx (Both Projects)
 
-export default function AuthCallback() {
-  const navigate = useNavigate();
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { supabase } from '@/lib/supabase'
+
+export function AuthCallback() {
+  const navigate = useNavigate()
 
   useEffect(() => {
     const handleCallback = async () => {
-      const accountType = localStorage.getItem('pending_account_type') || 'client';
-      const sourceUrl = localStorage.getItem('pending_source_url') || window.location.origin;
+      // Get stored account type
+      const accountType = localStorage.getItem('pending_account_type') || 'client'
+      const sourceUrl = localStorage.getItem('pending_source_url') || window.location.origin
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // Update user metadata with account type
+      const { data: { user } } = await supabase.auth.getUser()
       
       if (user && !user.user_metadata.account_type) {
         await supabase.auth.updateUser({
           data: {
             account_type: accountType,
-            source_url: sourceUrl,
-          },
-        });
+            source_url: sourceUrl
+          }
+        })
       }
       
-      localStorage.removeItem('pending_account_type');
-      localStorage.removeItem('pending_source_url');
+      // Clean up
+      localStorage.removeItem('pending_account_type')
+      localStorage.removeItem('pending_source_url')
       
-      navigate('/dashboard');
-    };
+      // Redirect based on account type
+      if (accountType === 'client') {
+        navigate('/profile')
+      } else {
+        navigate('/')
+      }
+    }
 
-    handleCallback();
-  }, [navigate]);
+    handleCallback()
+  }, [navigate])
 
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <Loader2 className="h-8 w-8 animate-spin" />
-    </div>
-  );
+  return <div>Processing authentication...</div>
 }
