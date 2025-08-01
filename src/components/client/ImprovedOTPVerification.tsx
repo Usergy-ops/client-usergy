@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +6,7 @@ import { ArrowLeft, Mail, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-r
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface ImprovedOTPVerificationProps {
   email: string;
