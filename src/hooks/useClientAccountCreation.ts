@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
+import { UnifiedClientService } from '@/services/UnifiedClientService';
 import { useErrorLogger } from './useErrorLogger';
 
 interface ClientAccountCreationState {
@@ -30,12 +30,11 @@ export function useClientAccountCreation() {
     try {
       console.log('Creating client account for user:', userId, userMetadata);
       
-      // Use simplified client record creation
-      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, userMetadata.email, userMetadata);
+      const result = await UnifiedClientService.ensureClientAccount(userId, userMetadata.email, userMetadata);
 
       if (result.success) {
         // Verify client status
-        const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
+        const isClient = await UnifiedClientService.isClientAccount(userId);
         
         if (isClient) {
           console.log('Client account created successfully');

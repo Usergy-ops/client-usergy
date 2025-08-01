@@ -1,25 +1,99 @@
+
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
-import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
+import { UnifiedClientService } from '@/services/UnifiedClientService';
+
+interface DiagnosticResult {
+  success: boolean;
+  userId: string;
+  userExists: boolean;
+  hasClientRecord: boolean;
+  isClientVerified: boolean;
+  isProfileComplete: boolean;
+  issues: string[];
+  recommendations: string[];
+}
 
 export default function Diagnostics() {
   const [userId, setUserId] = useState('');
-  const [diagnosticResult, setDiagnosticResult] = useState<any>(null);
-  const [rlsTestResults, setRlsTestResults] = useState<any[]>([]);
+  const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
   const [isRepairing, setIsRepairing] = useState(false);
 
   const runDiagnostic = async () => {
     if (!userId) return;
+    setIsRunning(true);
 
     try {
-      const result = await ClientAccountDiagnostics.runComprehensiveDiagnostic(userId);
-      setDiagnosticResult(result);
+      const issues: string[] = [];
+      const recommendations: string[] = [];
+
+      // Get comprehensive account status
+      const statusResult = await UnifiedClientService.getAccountStatus(userId);
+      
+      if (!statusResult.success) {
+        setDiagnosticResult({
+          success: false,
+          userId,
+          userExists: false,
+          hasClientRecord: false,
+          isClientVerified: false,
+          isProfileComplete: false,
+          issues: ['Failed to get account status: ' + statusResult.error],
+          recommendations: ['Check user ID and try again']
+        });
+        return;
+      }
+
+      const status = statusResult.data!;
+
+      if (!status.isClient) {
+        issues.push('User is not a client account');
+        recommendations.push('Create client account record');
+      }
+
+      if (!status.hasClientRecord) {
+        issues.push('Client record missing');
+        recommendations.push('Repair client account');
+      }
+
+      if (status.accountType !== 'client') {
+        issues.push('Account type is not set to client');
+        recommendations.push('Update account type to client');
+      }
+
+      if (!status.isProfileComplete) {
+        issues.push('Profile is incomplete');
+        recommendations.push('Complete profile setup');
+      }
+
+      setDiagnosticResult({
+        success: true,
+        userId,
+        userExists: !!status.email,
+        hasClientRecord: status.hasClientRecord,
+        isClientVerified: status.isClient,
+        isProfileComplete: status.isProfileComplete || false,
+        issues,
+        recommendations
+      });
+
     } catch (error) {
       console.error('Diagnostic error:', error);
-      setDiagnosticResult({ success: false, error: 'Failed to run diagnostic' });
+      setDiagnosticResult({
+        success: false,
+        userId,
+        userExists: false,
+        hasClientRecord: false,
+        isClientVerified: false,
+        isProfileComplete: false,
+        issues: ['Failed to run diagnostic'],
+        recommendations: ['Please try again or contact support']
+      });
+    } finally {
+      setIsRunning(false);
     }
   };
 
@@ -28,32 +102,18 @@ export default function Diagnostics() {
     setIsRepairing(true);
 
     try {
-      const result = await ClientAccountDiagnostics.repairClientAccount(userId);
-      setDiagnosticResult(result);
-    } catch (error) {
-      console.error('Repair error:', error);
-      setDiagnosticResult({ success: false, error: 'Failed to repair account' });
-    } finally {
-      setIsRepairing(false);
-    }
-  };
-
-  const testRLSPolicies = async () => {
-    if (!userId) return;
-    
-    try {
-      const result = await ClientAccountDiagnostics.checkRLSPolicies(userId);
+      const result = await UnifiedClientService.repairClientAccount(userId);
       
       if (result.success) {
-        console.log('RLS test results:', result.data);
-        setRlsTestResults(result.data || []);
+        // Run diagnostic again to update results
+        await runDiagnostic();
       } else {
-        console.error('RLS test error:', result.error);
-        setRlsTestResults([{ error: result.error }]);
+        console.error('Repair failed:', result.error);
       }
     } catch (error) {
-      console.error('RLS test exception:', error);
-      setRlsTestResults([{ error: error instanceof Error ? error.message : 'Unknown error' }]);
+      console.error('Repair error:', error);
+    } finally {
+      setIsRepairing(false);
     }
   };
 
@@ -75,13 +135,10 @@ export default function Diagnostics() {
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
             />
-            <Button onClick={runDiagnostic} variant="outline" size="sm">
-              Run Diagnostic
+            <Button onClick={runDiagnostic} variant="outline" size="sm" disabled={isRunning}>
+              {isRunning ? 'Running...' : 'Run Diagnostic'}
             </Button>
-            <Button onClick={testRLSPolicies} variant="outline" size="sm">
-              Test RLS
-            </Button>
-            <Button onClick={repairAccount} variant="outline" size="sm" disabled={isRepairing}>
+            <Button onClick={repairAccount} variant="outline" size="sm" disabled={isRepairing || !diagnosticResult}>
               {isRepairing ? 'Repairing...' : 'Repair Account'}
             </Button>
           </div>
@@ -93,20 +150,26 @@ export default function Diagnostics() {
                 <div className="space-y-1">
                   <p>
                     User Exists:{' '}
-                    <Badge variant={diagnosticResult.userExists ? 'success' : 'destructive'}>
+                    <Badge variant={diagnosticResult.userExists ? 'default' : 'destructive'}>
                       {diagnosticResult.userExists ? 'Yes' : 'No'}
                     </Badge>
                   </p>
                   <p>
                     Client Record Exists:{' '}
-                    <Badge variant={diagnosticResult.hasClientRecord ? 'success' : 'destructive'}>
+                    <Badge variant={diagnosticResult.hasClientRecord ? 'default' : 'destructive'}>
                       {diagnosticResult.hasClientRecord ? 'Yes' : 'No'}
                     </Badge>
                   </p>
                   <p>
                     Account Verified:{' '}
-                    <Badge variant={diagnosticResult.isClientVerified ? 'success' : 'destructive'}>
+                    <Badge variant={diagnosticResult.isClientVerified ? 'default' : 'destructive'}>
                       {diagnosticResult.isClientVerified ? 'Yes' : 'No'}
+                    </Badge>
+                  </p>
+                  <p>
+                    Profile Complete:{' '}
+                    <Badge variant={diagnosticResult.isProfileComplete ? 'default' : 'destructive'}>
+                      {diagnosticResult.isProfileComplete ? 'Yes' : 'No'}
                     </Badge>
                   </p>
                   {diagnosticResult.issues.length > 0 && (
@@ -135,28 +198,8 @@ export default function Diagnostics() {
                   )}
                 </div>
               ) : (
-                <p className="text-destructive">Error: {diagnosticResult.error}</p>
+                <p className="text-destructive">Error: {diagnosticResult.issues[0]}</p>
               )}
-            </div>
-          )}
-
-          {rlsTestResults.length > 0 && (
-            <div className="mt-4 p-3 bg-muted rounded-lg">
-              <h3 className="text-sm font-semibold mb-2">RLS Test Results:</h3>
-              <div className="text-xs space-y-1">
-                {rlsTestResults.map((result, idx) => (
-                  <div key={idx} className={result.can_access ? 'text-green-600' : 'text-red-600'}>
-                    {result.error ? (
-                      <span>Error: {result.error}</span>
-                    ) : (
-                      <span>
-                        {result.table_name} {result.operation}: {result.can_access ? '✓' : '✗'}
-                        {result.error_message && ` (${result.error_message})`}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </CardContent>

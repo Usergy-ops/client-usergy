@@ -1,7 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { SimplifiedClientDiagnostics } from '@/utils/simplifiedClientDiagnostics';
+import { UnifiedClientService } from '@/services/UnifiedClientService';
 
 interface AccountStatus {
   isClient: boolean;
@@ -22,7 +21,7 @@ export function useClientAccountStatus() {
     try {
       console.log('Checking client account status for user:', userId);
       
-      const isClient = await SimplifiedClientDiagnostics.isClientAccount(userId);
+      const isClient = await UnifiedClientService.isClientAccount(userId);
       
       setStatus({
         isClient,
@@ -47,19 +46,10 @@ export function useClientAccountStatus() {
     console.log('Ensuring client account exists for user:', userId, userMetadata);
 
     try {
-      // Get user email from auth
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user || user.id !== userId) {
-        console.error('User not found or ID mismatch');
-        return false;
-      }
-
-      // Use simplified client record creation
-      const result = await SimplifiedClientDiagnostics.ensureClientRecord(userId, user.email!, userMetadata);
+      const result = await UnifiedClientService.ensureClientAccount(userId, userMetadata.email, userMetadata);
       
       if (result.success) {
-        console.log('Client record ensured successfully:', result);
+        console.log('Client account ensured successfully:', result);
         return await checkAccountStatus(userId);
       }
 

@@ -1,7 +1,7 @@
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { UnifiedClientService } from '@/services/UnifiedClientService';
 import { useToast } from '@/hooks/use-toast';
 
 interface SignUpResult {
@@ -54,15 +54,9 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // Check if user is a client account
+          // Use unified service to check client account status
           try {
-            const { data: accountData } = await supabase
-              .from('account_types')
-              .select('account_type')
-              .eq('auth_user_id', session.user.id)
-              .single();
-            
-            const isClient = accountData?.account_type === 'client';
+            const isClient = await UnifiedClientService.isClientAccount(session.user.id);
             setIsClientAccount(isClient);
             
             if (event === 'SIGNED_IN' && isClient) {

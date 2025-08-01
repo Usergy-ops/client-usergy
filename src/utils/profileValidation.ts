@@ -1,5 +1,5 @@
 
-import { ClientAccountService } from '@/services/ClientAccountService';
+import { UnifiedClientService } from '@/services/UnifiedClientService';
 
 interface ProfileCompletionResult {
   isComplete: boolean;
@@ -12,7 +12,7 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
   try {
     console.log('Checking profile completion for user:', userId);
     
-    const result = await ClientAccountService.checkProfileCompletion(userId);
+    const result = await UnifiedClientService.checkProfileCompletion(userId);
     
     if (!result.success) {
       return {
@@ -42,7 +42,7 @@ export async function updateClientProfile(userId: string, profileData: any) {
   try {
     console.log('Updating client profile for user:', userId, profileData);
 
-    const result = await ClientAccountService.updateProfile(userId, profileData);
+    const result = await UnifiedClientService.updateProfile(userId, profileData);
     
     return {
       success: result.success,
