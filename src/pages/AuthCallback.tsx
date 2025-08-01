@@ -1,10 +1,9 @@
-// src/pages/AuthCallback.tsx (Both Projects)
 
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 
-export function AuthCallback() {
+export default function AuthCallback() {
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -42,3 +41,5 @@ export function AuthCallback() {
 
   return <div>Processing authentication...</div>
 }
+
+export { AuthCallback }

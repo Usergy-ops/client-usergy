@@ -55,7 +55,7 @@ enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
 
-[functions.client-auth-handler]
+[functions.unified-auth]
 verify_jwt = false
 
 [edge_runtime]
