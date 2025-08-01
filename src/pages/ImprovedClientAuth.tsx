@@ -1,5 +1,6 @@
+
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useEnhancedClientAuth } from '@/contexts/EnhancedClientAuthContext';
 import { ImprovedClientSignUpForm } from '@/components/client/ImprovedClientSignUpForm';
@@ -9,6 +10,11 @@ import { ClientSignInForm } from '@/components/client/ClientSignInForm';
 export default function ImprovedClientAuth() {
   const [showSignIn, setShowSignIn] = useState(true);
   const { user } = useEnhancedClientAuth();
+
+  const handleSignUpSuccess = () => {
+    // Handle successful sign up - could redirect or show success message
+    console.log('Sign up successful');
+  };
 
   return (
     <div className="container relative h-screen flex-col items-center justify-center md:grid lg:max-w-none lg:px-0">
@@ -63,7 +69,7 @@ export default function ImprovedClientAuth() {
                   <ClientSignInForm />
                 </TabsContent>
                 <TabsContent value="sign-up">
-                  <ImprovedClientSignUpForm />
+                  <ImprovedClientSignUpForm onSuccess={handleSignUpSuccess} />
                 </TabsContent>
               </Tabs>
             )}

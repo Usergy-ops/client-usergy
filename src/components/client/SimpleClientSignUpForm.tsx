@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,9 +9,10 @@ import { supabase } from '@/integrations/supabase/client';
 
 interface SignUpFormProps {
   onSuccess?: () => void;
+  onSwitchToSignIn?: () => void;
 }
 
-export function SimpleClientSignUpForm({ onSuccess }: SignUpFormProps = {}) {
+export function SimpleClientSignUpForm({ onSuccess, onSwitchToSignIn }: SignUpFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -54,7 +56,7 @@ export function SimpleClientSignUpForm({ onSuccess }: SignUpFormProps = {}) {
         return;
       }
 
-      // Handle success - maybe redirect or show a success message
+      // Handle success - call onSuccess callback
       console.log('Signup successful:', data);
       onSuccess?.();
 
@@ -149,6 +151,21 @@ export function SimpleClientSignUpForm({ onSuccess }: SignUpFormProps = {}) {
             'Sign up'
           )}
         </Button>
+        
+        {onSwitchToSignIn && (
+          <div className="text-center mt-4">
+            <p className="text-sm text-muted-foreground">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={onSwitchToSignIn}
+                className="text-primary hover:underline"
+              >
+                Sign in
+              </button>
+            </p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

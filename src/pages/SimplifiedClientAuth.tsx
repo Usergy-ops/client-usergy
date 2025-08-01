@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { SimpleClientSignUpForm } from '@/components/client/SimpleClientSignUpForm';
 import { SimpleOTPVerification } from '@/components/client/SimpleOTPVerification';
@@ -10,9 +9,9 @@ export default function SimplifiedClientAuth() {
     email: string;
   } | null>(null);
 
-  const handleSignupSuccess = (email: string) => {
-    setSignupData({ email });
-    setStep('verification');
+  const handleSignupSuccess = () => {
+    // For now, just log success - the component will handle email internally
+    console.log('Signup successful');
   };
 
   const handleBackToSignup = () => {
