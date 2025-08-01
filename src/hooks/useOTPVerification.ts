@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { retryOperation, isRetryableError } from '@/utils/retryUtility';
+import { useEnhancedErrorLogger } from './useEnhancedErrorLogger';
 
 interface OTPVerificationResult {
   success: boolean;
@@ -13,6 +14,7 @@ export function useOTPVerification() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState<string>('');
+  const { logOTPError } = useEnhancedErrorLogger();
 
   const verifyOTP = async (email: string, otpCode: string, password?: string): Promise<OTPVerificationResult> => {
     setIsVerifying(true);
@@ -55,6 +57,14 @@ export function useOTPVerification() {
 
       const errorMessage = result?.error || 'Invalid verification code. Please try again.';
       setError(errorMessage);
+      
+      await logOTPError(
+        new Error(errorMessage),
+        'verification_failed',
+        email,
+        { otpCode: otpCode.slice(0, 2) + '****' }
+      );
+      
       return { success: false, error: { message: errorMessage } };
 
     } catch (error) {
@@ -66,7 +76,14 @@ export function useOTPVerification() {
         errorMessage = 'Invalid or expired verification code. Please try again or request a new code.';
       } else if (error?.message?.includes('User already exists')) {
         errorMessage = 'This email is already registered. Please try signing in instead.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
       }
+      
+      await logOTPError(error, 'verification_exception', email, {
+        errorType: typeof error,
+        isRetryable: isRetryableError(error)
+      });
       
       setError(errorMessage);
       return { success: false, error: { message: errorMessage } };
@@ -107,11 +124,26 @@ export function useOTPVerification() {
 
       const errorMessage = result?.error || 'Failed to resend code. Please try again.';
       setError(errorMessage);
+      
+      await logOTPError(
+        new Error(errorMessage),
+        'resend_failed',
+        email
+      );
+      
       return { success: false, error: { message: errorMessage } };
 
     } catch (error) {
       console.error('OTP resend exception:', error);
-      const errorMessage = 'Failed to resend code. Please try again.';
+      
+      const errorMessage = isRetryableError(error) 
+        ? 'Service temporarily unavailable. Please try again in a moment.'
+        : 'Failed to resend code. Please try again.';
+      
+      await logOTPError(error, 'resend_exception', email, {
+        isRetryable: isRetryableError(error)
+      });
+      
       setError(errorMessage);
       return { success: false, error: { message: errorMessage } };
     } finally {

@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
+import { retryOperation, isRetryableError } from '@/utils/retryUtility';
 
 interface SignUpResult {
   success: boolean;
@@ -34,6 +35,7 @@ interface ClientAuthContextType {
   verifyOTP: (email: string, otpCode: string, password?: string) => Promise<VerifyOTPResult>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  refreshSession: () => Promise<void>;
 }
 
 const ClientAuthContext = createContext<ClientAuthContextType | undefined>(undefined);
@@ -62,7 +64,22 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
               .eq('auth_user_id', session.user.id)
               .single();
             
-            setIsClientAccount(!error && accountTypeData?.account_type === 'client');
+            const isClient = !error && accountTypeData?.account_type === 'client';
+            setIsClientAccount(isClient);
+            
+            // Enhanced post-authentication redirection
+            if (event === 'SIGNED_IN' && isClient) {
+              console.log('Client user signed in, preparing for redirection');
+              
+              // Small delay to ensure state is properly updated
+              setTimeout(() => {
+                const currentPath = window.location.pathname;
+                if (currentPath === '/' || currentPath === '/auth' || currentPath === '/login') {
+                  console.log('Redirecting to profile page after successful authentication');
+                  window.location.href = '/profile';
+                }
+              }, 1000);
+            }
           } catch (error) {
             console.error('Error checking client account:', error);
             setIsClientAccount(false);
@@ -73,6 +90,11 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         
         if (event === 'SIGNED_IN' && session?.user) {
           console.log('User signed in successfully:', session.user.email);
+        }
+        
+        if (event === 'SIGNED_OUT') {
+          console.log('User signed out');
+          setIsClientAccount(false);
         }
       }
     );
@@ -91,69 +113,98 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     try {
       console.log('Starting unified signup process for:', email);
 
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'signup',
-          email, 
-          password,
-          companyName: metadata.companyName || 'My Company',
-          firstName: metadata.firstName || '',
-          lastName: metadata.lastName || '',
-          accountType: metadata.accountType || 'client',
-          sourceUrl: window.location.origin
-        }
-      });
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'signup',
+              email, 
+              password,
+              companyName: metadata.companyName || 'My Company',
+              firstName: metadata.firstName || '',
+              lastName: metadata.lastName || '',
+              accountType: metadata.accountType || 'client',
+              sourceUrl: window.location.origin
+            }
+          });
 
-      console.log('Unified signup response:', { data, error });
+          if (error) {
+            throw error;
+          }
 
-      if (error) {
-        console.error('Signup error:', error);
-        return { 
-          success: false, 
-          error: error.message || 'Signup failed. Please try again.' 
-        };
-      }
+          return data;
+        },
+        { maxRetries: 3, delay: 1000 }
+      );
 
-      if (data?.success) {
+      console.log('Unified signup response:', result);
+
+      if (result?.success) {
         return {
           success: true,
-          emailSent: data.emailSent,
-          accountType: data.accountType,
-          debug: data.debug
+          emailSent: result.emailSent,
+          accountType: result.accountType,
+          debug: result.debug
         };
       }
 
       return {
         success: false,
-        error: data?.error || 'Signup failed. Please try again.'
+        error: result?.error || 'Signup failed. Please try again.'
       };
 
     } catch (error) {
       console.error('Signup exception:', error);
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (error?.message?.includes('User already exists')) {
+        errorMessage = 'An account with this email already exists. Please try signing in instead.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
       return {
         success: false,
-        error: 'Network error. Please check your connection and try again.'
+        error: errorMessage
       };
     }
   };
 
   const signIn = async (email: string, password: string): Promise<SignInResult> => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
 
-      if (error) {
-        return { success: false, error: error.message };
-      }
+          if (error) {
+            throw error;
+          }
 
-      return { success: true, session: data.session };
+          return data;
+        },
+        { maxRetries: 2, delay: 1000 }
+      );
+
+      return { success: true, session: result.session };
     } catch (error) {
       console.error('Sign in exception:', error);
+      
+      let errorMessage = 'Sign in failed. Please check your credentials and try again.';
+      
+      if (error?.message?.includes('Invalid login credentials')) {
+        errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+      } else if (error?.message?.includes('Email not confirmed')) {
+        errorMessage = 'Please verify your email address before signing in.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
       return {
         success: false,
-        error: 'Network error. Please check your connection and try again.'
+        error: errorMessage
       };
     }
   };
@@ -162,50 +213,68 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     try {
       console.log('Starting unified OTP verification for:', email);
 
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'verify-otp',
-          email, 
-          otpCode, 
-          password 
-        }
-      });
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'verify-otp',
+              email, 
+              otpCode, 
+              password 
+            }
+          });
 
-      console.log('Unified OTP verification response:', { data, error });
+          if (error) {
+            throw error;
+          }
 
-      if (error) {
-        console.error('OTP verification error:', error);
-        return { 
-          success: false, 
-          error: error.message || 'Verification failed. Please try again.' 
-        };
-      }
+          return data;
+        },
+        { maxRetries: 2, delay: 1500 }
+      );
 
-      if (data?.success && data?.session) {
+      console.log('Unified OTP verification response:', result);
+
+      if (result?.success && result?.session) {
         console.log('OTP verification successful, setting session');
         
         // Set the session manually since we got it from the edge function
         await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
+          access_token: result.session.access_token,
+          refresh_token: result.session.refresh_token
         });
 
         return {
           success: true,
-          session: data.session
+          session: result.session
         };
+      }
+
+      let errorMessage = result?.error || 'Invalid verification code. Please try again.';
+      
+      if (result?.error?.includes('Invalid or expired')) {
+        errorMessage = 'Invalid or expired verification code. Please request a new code.';
       }
 
       return {
         success: false,
-        error: data?.error || 'Invalid verification code. Please try again.'
+        error: errorMessage
       };
 
     } catch (error) {
       console.error('OTP verification exception:', error);
+      
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (error?.message?.includes('Invalid or expired')) {
+        errorMessage = 'Invalid or expired verification code. Please try again or request a new code.';
+      } else if (isRetryableError(error)) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
       return {
         success: false,
-        error: 'Network error. Please check your connection and try again.'
+        error: errorMessage
       };
     }
   };
@@ -261,6 +330,19 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
+  const refreshSession = async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) {
+        console.error('Session refresh error:', error);
+      } else {
+        console.log('Session refreshed successfully');
+      }
+    } catch (error) {
+      console.error('Session refresh exception:', error);
+    }
+  };
+
   return (
     <ClientAuthContext.Provider
       value={{
@@ -273,6 +355,7 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
         verifyOTP,
         signOut,
         signInWithGoogle,
+        refreshSession,
       }}
     >
       {children}

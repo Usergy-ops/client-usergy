@@ -6,21 +6,26 @@ import { checkProfileCompletion } from '@/utils/profileValidation';
 
 interface EnhancedClientProtectedRouteProps {
   children: ReactNode;
+  requireCompleteProfile?: boolean;
 }
 
-export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtectedRouteProps) {
+export function EnhancedClientProtectedRoute({ 
+  children, 
+  requireCompleteProfile = false 
+}: EnhancedClientProtectedRouteProps) {
   const { user, session, loading, isClientAccount } = useClientAuth();
   const [isProfileComplete, setIsProfileComplete] = useState(false);
-  const [checkingProfile, setCheckingProfile] = useState(true);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  const [checkingProfile, setCheckingProfile] = useState(false);
 
   useEffect(() => {
     const performProfileCheck = async () => {
-      if (!user || !isClientAccount) {
+      if (!user || !isClientAccount || !requireCompleteProfile) {
         setCheckingProfile(false);
+        setIsProfileComplete(true); // Skip check if not required
         return;
       }
 
+      setCheckingProfile(true);
       try {
         console.log('Checking profile completion for user:', user.id);
         
@@ -28,8 +33,7 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
         
         if (result.error) {
           console.error('Profile completion check error:', result.error);
-          setProfileError(result.error);
-          // For now, assume profile is complete if there's an error to avoid blocking access
+          // Allow access even if check fails to prevent blocking users
           setIsProfileComplete(true);
         } else {
           console.log('Profile completion check result:', result.isComplete);
@@ -37,8 +41,7 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
         }
       } catch (error) {
         console.error('Exception in profile completion check:', error);
-        setProfileError('Failed to check profile completion');
-        // For now, assume profile is complete if there's an error to avoid blocking access
+        // Allow access even if check fails to prevent blocking users
         setIsProfileComplete(true);
       } finally {
         setCheckingProfile(false);
@@ -49,8 +52,9 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
       performProfileCheck();
     } else if (!loading) {
       setCheckingProfile(false);
+      setIsProfileComplete(true);
     }
-  }, [user, isClientAccount, loading]);
+  }, [user, isClientAccount, loading, requireCompleteProfile]);
 
   // Enhanced loading state
   if (loading || checkingProfile) {
@@ -87,10 +91,10 @@ export function EnhancedClientProtectedRoute({ children }: EnhancedClientProtect
     return <Navigate to="/" replace />;
   }
 
-  // Check if profile is complete - for now, allow access even if incomplete
-  // This prevents users from being stuck in redirect loops
-  if (!isProfileComplete && !profileError) {
-    console.log('EnhancedClientProtectedRoute: Profile incomplete, but allowing access to prevent redirect loops');
+  // Check profile completion only if required
+  if (requireCompleteProfile && !isProfileComplete) {
+    console.log('EnhancedClientProtectedRoute: Profile incomplete, redirecting to profile setup');
+    return <Navigate to="/profile" replace />;
   }
 
   // All checks passed, render protected content
