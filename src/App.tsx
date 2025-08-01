@@ -10,7 +10,7 @@ import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import Welcome from "./pages/Welcome";
 import ProfileSetup from "./pages/ProfileSetup";
 import ClientDashboard from "./pages/ClientDashboard";
-import AuthCallback from "./pages/AuthCallback";
+import AuthCallback from '@/pages/AuthCallback';
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
