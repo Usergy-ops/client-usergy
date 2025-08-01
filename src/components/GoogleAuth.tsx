@@ -1,4 +1,5 @@
-// src/components/GoogleAuth.tsx (Both Projects)
+
+import { supabase } from '@/integrations/supabase/client';
 
 const handleGoogleAuth = async () => {
   const sourceUrl = window.location.href

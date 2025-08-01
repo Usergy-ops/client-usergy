@@ -1,4 +1,3 @@
-
 // src/contexts/ClientAuthContext.tsx
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
@@ -15,6 +14,7 @@ interface ClientAuthContextType {
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   verifyOTP: (email: string, otp: string, password: string) => Promise<{ error: string | null }>;
+  diagnoseAccount: (userId: string) => Promise<any>;
 }
 
 // Create the context
@@ -49,6 +49,56 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     } catch (error) {
       console.error('Error checking client account:', error);
+    }
+  }, []);
+
+  const diagnoseAccount = useCallback(async (userId: string) => {
+    try {
+      // Get user info from auth.users
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      
+      // Get account type info
+      const { data: accountType } = await supabase
+        .from('account_types')
+        .select('*')
+        .eq('auth_user_id', userId)
+        .single();
+
+      // Get profile info (assuming there's a profiles table)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      // Check client account status
+      const { data: isClientResult } = await supabase.rpc('is_client_account', {
+        user_id_param: userId
+      });
+
+      return {
+        user_exists: !!authUser,
+        user_email: authUser?.email,
+        user_provider: authUser?.app_metadata?.provider,
+        account_type_exists: !!accountType,
+        account_type: accountType?.account_type,
+        profile_exists: !!profile,
+        profile_company: profile?.company_name,
+        is_client_account_result: isClientResult
+      };
+    } catch (error) {
+      console.error('Error diagnosing account:', error);
+      return {
+        user_exists: false,
+        user_email: null,
+        user_provider: null,
+        account_type_exists: false,
+        account_type: null,
+        profile_exists: false,
+        profile_company: null,
+        is_client_account_result: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }, []);
 
@@ -200,6 +250,7 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         signOut,
         refreshSession,
         verifyOTP,
+        diagnoseAccount,
       }}
     >
       {children}

@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
@@ -58,7 +57,7 @@ export function ClientSignInForm({ onForgotPassword }: ClientSignInFormProps) {
     const { error } = await signIn(formData.email, formData.password);
     
     if (error) {
-      setError(error.message);
+      setError(error);
       setLoading(false);
     }
   };
