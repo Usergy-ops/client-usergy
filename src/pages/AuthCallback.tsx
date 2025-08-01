@@ -1,74 +1,40 @@
-
-import { useEffect, useRef } from 'react';
+// src/pages/AuthCallback.tsx (NEW FILE)
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { NetworkNodes } from '@/components/client/NetworkNodes';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
+import { supabase } from '@/lib/supabase';
+import { Loader2 } from 'lucide-react';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { user, session, isClientAccount, loading, refreshSession, waitForClientAccount } = useClientAuth();
-  const processedRef = useRef(false);
 
   useEffect(() => {
-    if (processedRef.current) return;
-
     const handleCallback = async () => {
-      processedRef.current = true;
+      const accountType = localStorage.getItem('pending_account_type') || 'client';
+      const sourceUrl = localStorage.getItem('pending_source_url') || window.location.origin;
       
-      console.log('AuthCallback: Processing authentication callback...');
+      const { data: { user } } = await supabase.auth.getUser();
       
-      try {
-        // Wait for auth to settle
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Refresh session to ensure we have latest state
-        await refreshSession();
-        
-        // Give context time to update
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Navigate based on final state
-        if (user && session) {
-          if (isClientAccount) {
-            console.log('AuthCallback: Client authenticated, redirecting to dashboard');
-            navigate('/dashboard', { replace: true });
-          } else {
-            console.log('AuthCallback: User authenticated but not client, waiting for account...');
-            const isClient = await waitForClientAccount(user.id, 15);
-            if (isClient) {
-              console.log('AuthCallback: Client account confirmed, redirecting to dashboard');
-              navigate('/dashboard', { replace: true });
-            } else {
-              console.log('AuthCallback: Failed to confirm client account, redirecting to home');
-              navigate('/', { replace: true });
-            }
-          }
-        } else {
-          console.log('AuthCallback: No user or session found, redirecting to home');
-          navigate('/', { replace: true });
-        }
-      } catch (error) {
-        console.error('AuthCallback: Error processing callback:', error);
-        navigate('/', { replace: true });
+      if (user && !user.user_metadata.account_type) {
+        await supabase.auth.updateUser({
+          data: {
+            account_type: accountType,
+            source_url: sourceUrl,
+          },
+        });
       }
+      
+      localStorage.removeItem('pending_account_type');
+      localStorage.removeItem('pending_source_url');
+      
+      navigate('/dashboard');
     };
 
-    // Only process if not loading
-    if (!loading) {
-      handleCallback();
-    }
-  }, [user, session, isClientAccount, loading, navigate, refreshSession, waitForClientAccount]);
+    handleCallback();
+  }, [navigate]);
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center">
-      <NetworkNodes />
-      <div className="glass-card p-8 text-center relative z-10 max-w-md">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-lg font-semibold text-foreground">Setting up your account...</p>
-        <p className="text-sm text-muted-foreground mt-2">
-          {loading ? 'Loading...' : 'Please wait while we prepare your dashboard'}
-        </p>
-      </div>
+    <div className="flex items-center justify-center min-h-screen">
+      <Loader2 className="h-8 w-8 animate-spin" />
     </div>
   );
 }
