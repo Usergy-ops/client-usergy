@@ -52,8 +52,9 @@ export default function Welcome() {
     return null;
   }
 
-  const handleSignUpSuccess = (email: string) => {
-    setSignupEmail(email);
+  const handleSignUpSuccess = () => {
+    // Since SimpleClientSignUpForm now handles email internally,
+    // we just need to switch to OTP verification mode
     setAuthMode('otp-verification');
   };
 
