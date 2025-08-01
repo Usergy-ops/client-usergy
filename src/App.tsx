@@ -61,3 +61,19 @@ const App = () => (
 );
 
 export default App;
+
+// Ensure this import exists
+import { lazy, Suspense } from 'react';
+
+// Add lazy loading for AuthCallback
+const AuthCallback = lazy(() => import('@/pages/auth/callback'));
+
+// In your Routes, wrap with Suspense
+<Route 
+  path="/auth/callback" 
+  element={
+    <Suspense fallback={<div>Loading...</div>}>
+      <AuthCallback />
+    </Suspense>
+  } 
+/>
