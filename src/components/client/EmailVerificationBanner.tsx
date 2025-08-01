@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Mail, X, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 
 export function EmailVerificationBanner() {

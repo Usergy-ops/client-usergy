@@ -1,6 +1,5 @@
-
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 
 interface EmailTestResult {
   success: boolean;

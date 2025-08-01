@@ -1,211 +1,166 @@
-
-import { useState, useEffect } from 'react';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
 import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
-import { supabase } from '@/lib/supabase';
 
 export default function Diagnostics() {
-  const { user, session, loading, isClientAccount } = useClientAuth();
-  const [diagnosis, setDiagnosis] = useState<any>(null);
-  const [rlsResults, setRlsResults] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [userId, setUserId] = useState('');
+  const [diagnosticResult, setDiagnosticResult] = useState<any>(null);
+  const [rlsTestResults, setRlsTestResults] = useState<any[]>([]);
+  const [isRepairing, setIsRepairing] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      loadBasicDiagnostics();
-    }
-  }, [user]);
+  const runDiagnostic = async () => {
+    if (!userId) return;
 
-  const loadBasicDiagnostics = async () => {
-    if (!user) return;
-    
-    setIsLoading(true);
     try {
-      // Basic diagnosis using available database functions
-      const { data: accountType, error: accountError } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      const { data: clientRecord, error: clientError } = await supabase
-        .from('client_workflow.clients')
-        .select('*')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      setDiagnosis({
-        user_exists: true,
-        user_email: user.email,
-        account_type_exists: !accountError,
-        account_type: accountType?.account_type,
-        client_record_exists: !clientError,
-        client_data: clientRecord,
-        is_client_account: isClientAccount
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setIsLoading(false);
+      const result = await ClientAccountDiagnostics.runComprehensiveDiagnostic(userId);
+      setDiagnosticResult(result);
+    } catch (error) {
+      console.error('Diagnostic error:', error);
+      setDiagnosticResult({ success: false, error: 'Failed to run diagnostic' });
     }
   };
 
-  const runRLSTest = async () => {
-    if (!user) return;
-    
-    setIsLoading(true);
+  const repairAccount = async () => {
+    if (!userId) return;
+    setIsRepairing(true);
+
     try {
-      const result = await ClientAccountDiagnostics.checkRLSPolicies(user.id);
-      setRlsResults(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'RLS test failed');
+      const result = await ClientAccountDiagnostics.repairClientAccount(userId);
+      setDiagnosticResult(result);
+    } catch (error) {
+      console.error('Repair error:', error);
+      setDiagnosticResult({ success: false, error: 'Failed to repair account' });
     } finally {
-      setIsLoading(false);
+      setIsRepairing(false);
     }
   };
 
-  const performBasicRepair = async () => {
-    if (!user) return;
+  const testRLSPolicies = async () => {
+    if (!userId) return;
     
-    setIsLoading(true);
     try {
-      // Call the ensure client account function
-      const { data, error } = await supabase.rpc('ensure_client_account', {
-        user_id_param: user.id,
-        company_name_param: 'My Company'
-      });
-
-      if (error) {
-        setError(error.message);
+      const result = await ClientAccountDiagnostics.checkRLSPolicies(userId);
+      
+      if (result.success) {
+        console.log('RLS test results:', result.data);
+        setRlsTestResults(result.data || []);
       } else {
-        // Reload diagnostics after successful repair
-        await loadBasicDiagnostics();
-        setError(null);
+        console.error('RLS test error:', result.error);
+        setRlsTestResults([{ error: result.error }]);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Repair failed');
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error('RLS test exception:', error);
+      setRlsTestResults([{ error: error instanceof Error ? error.message : 'Unknown error' }]);
     }
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">Client Diagnostics</h1>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Auth Context State */}
-        <div className="bg-card p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Auth Context State</h2>
-          <pre className="bg-muted p-3 rounded text-sm overflow-auto">
-            {JSON.stringify({
-              loading,
-              isClientAccount,
-              user: user ? { id: user.id, email: user.email } : null,
-              session: session ? { 
-                access_token: '...', 
-                expires_in: session.expires_in,
-                expires_at: session.expires_at 
-              } : null,
-            }, null, 2)}
-          </pre>
-        </div>
-
-        {/* Control Panel */}
-        <div className="bg-card p-4 rounded-lg">
-          <h2 className="text-xl font-semibold mb-4">Diagnostic Controls</h2>
-          <div className="space-y-3">
-            <Button 
-              onClick={loadBasicDiagnostics} 
-              disabled={!user || isLoading}
-              className="w-full"
-            >
-              {isLoading ? 'Loading...' : 'Refresh Diagnostics'}
+    <div className="container mx-auto p-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Client Account Diagnostics</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <label htmlFor="userId" className="text-sm font-medium">
+              User ID:
+            </label>
+            <input
+              type="text"
+              id="userId"
+              className="border rounded px-2 py-1 text-sm w-48"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+            />
+            <Button onClick={runDiagnostic} variant="outline" size="sm">
+              Run Diagnostic
             </Button>
-            
-            <Button 
-              onClick={runRLSTest} 
-              disabled={!user || isLoading}
-              variant="outline"
-              className="w-full"
-            >
-              Test RLS Policies
+            <Button onClick={testRLSPolicies} variant="outline" size="sm">
+              Test RLS
             </Button>
-            
-            <Button 
-              onClick={performBasicRepair} 
-              disabled={!user || isLoading}
-              variant="destructive"
-              className="w-full"
-            >
-              {isLoading ? 'Repairing...' : 'Repair Account'}
+            <Button onClick={repairAccount} variant="outline" size="sm" disabled={isRepairing}>
+              {isRepairing ? 'Repairing...' : 'Repair Account'}
             </Button>
           </div>
-          
-          {error && (
-            <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded">
-              <p className="text-destructive font-medium">Error:</p>
-              <p className="text-destructive text-sm">{error}</p>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-2"
-                onClick={() => setError(null)}
-              >
-                Clear Error
-              </Button>
-            </div>
-          )}
-        </div>
 
-        {/* Basic Account Diagnosis */}
-        {diagnosis && (
-          <div className="bg-card p-4 rounded-lg">
-            <h2 className="text-xl font-semibold mb-4">Basic Diagnosis</h2>
-            <div className="space-y-2 text-sm">
-              <div>User Exists: {diagnosis.user_exists ? '✅' : '❌'}</div>
-              <div>Email: {diagnosis.user_email}</div>
-              <div>Has Account Type: {diagnosis.account_type_exists ? '✅' : '❌'}</div>
-              <div>Account Type: {diagnosis.account_type || 'None'}</div>
-              <div>Has Client Record: {diagnosis.client_record_exists ? '✅' : '❌'}</div>
-              <div>Is Client Verified: {diagnosis.is_client_account ? '✅' : '❌'}</div>
-              {diagnosis.client_data && (
-                <div className="mt-4">
-                  <h3 className="font-semibold">Client Data:</h3>
-                  <pre className="bg-muted p-2 rounded text-xs">
-                    {JSON.stringify(diagnosis.client_data, null, 2)}
-                  </pre>
+          {diagnosticResult && (
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold">Diagnostic Result:</h3>
+              {diagnosticResult.success ? (
+                <div className="space-y-1">
+                  <p>
+                    User Exists:{' '}
+                    <Badge variant={diagnosticResult.userExists ? 'success' : 'destructive'}>
+                      {diagnosticResult.userExists ? 'Yes' : 'No'}
+                    </Badge>
+                  </p>
+                  <p>
+                    Client Record Exists:{' '}
+                    <Badge variant={diagnosticResult.hasClientRecord ? 'success' : 'destructive'}>
+                      {diagnosticResult.hasClientRecord ? 'Yes' : 'No'}
+                    </Badge>
+                  </p>
+                  <p>
+                    Account Verified:{' '}
+                    <Badge variant={diagnosticResult.isClientVerified ? 'success' : 'destructive'}>
+                      {diagnosticResult.isClientVerified ? 'Yes' : 'No'}
+                    </Badge>
+                  </p>
+                  {diagnosticResult.issues.length > 0 && (
+                    <div className="space-y-1">
+                      <h4 className="text-md font-semibold">Issues:</h4>
+                      <ul className="list-disc pl-5">
+                        {diagnosticResult.issues.map((issue, index) => (
+                          <li key={index} className="text-destructive">
+                            {issue}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {diagnosticResult.recommendations.length > 0 && (
+                    <div className="space-y-1">
+                      <h4 className="text-md font-semibold">Recommendations:</h4>
+                      <ul className="list-disc pl-5">
+                        {diagnosticResult.recommendations.map((recommendation, index) => (
+                          <li key={index} className="text-muted-foreground">
+                            {recommendation}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <p className="text-destructive">Error: {diagnosticResult.error}</p>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* RLS Test Results */}
-        {rlsResults && (
-          <div className="bg-card p-4 rounded-lg">
-            <h2 className="text-xl font-semibold mb-4">RLS Policy Test Results</h2>
-            {rlsResults.success ? (
-              <div className="space-y-2">
-                {rlsResults.data && rlsResults.data.map((result: any, index: number) => (
-                  <div key={index} className={`text-sm p-2 rounded ${
-                    result.can_access ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {result.table_name} {result.operation}: {result.can_access ? '✅' : '❌'}
-                    {result.error_message && ` - ${result.error_message}`}
+          {rlsTestResults.length > 0 && (
+            <div className="mt-4 p-3 bg-muted rounded-lg">
+              <h3 className="text-sm font-semibold mb-2">RLS Test Results:</h3>
+              <div className="text-xs space-y-1">
+                {rlsTestResults.map((result, idx) => (
+                  <div key={idx} className={result.can_access ? 'text-green-600' : 'text-red-600'}>
+                    {result.error ? (
+                      <span>Error: {result.error}</span>
+                    ) : (
+                      <span>
+                        {result.table_name} {result.operation}: {result.can_access ? '✓' : '✗'}
+                        {result.error_message && ` (${result.error_message})`}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="text-red-600">
-                RLS Test Failed: {rlsResults.error}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

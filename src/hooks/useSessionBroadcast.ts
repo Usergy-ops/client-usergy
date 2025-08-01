@@ -1,6 +1,5 @@
-
 import { useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 
 const BROADCAST_CHANNEL = 'usergy_auth_sync';
 

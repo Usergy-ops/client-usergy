@@ -1,40 +1,35 @@
-
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, Mail, Lock, User, Building2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Mail, Building, User, Eye, EyeOff } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
-interface ImprovedClientSignUpFormProps {
-  onSuccess: (email: string, password: string) => void;
+interface SignUpFormProps {
+  onSuccess: (email: string) => void;
 }
 
-export function ImprovedClientSignUpForm({ onSuccess }: ImprovedClientSignUpFormProps) {
+export function ImprovedClientSignUpForm({ onSuccess }: SignUpFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [companyName, setCompanyName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  const validateForm = () => {
-    if (!email) return 'Please enter your email address';
-    if (!password) return 'Please enter a password';
-    if (password.length < 8) return 'Password must be at least 8 characters';
-    if (!firstName.trim()) return 'Please enter your first name';
-    if (!lastName.trim()) return 'Please enter your last name';
-    if (!companyName.trim()) return 'Please enter your company name';
-    return null;
-  };
+  useEffect(() => {
+    // Reset error message on input change
+    setError('');
+  }, [email, password, companyName, firstName, lastName]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const validationError = validateForm();
-    if (validationError) {
-      setError(validationError);
+
+    if (!email || !password || !companyName || !firstName || !lastName) {
+      setError('All fields are required.');
       return;
     }
 
@@ -42,218 +37,153 @@ export function ImprovedClientSignUpForm({ onSuccess }: ImprovedClientSignUpForm
     setError('');
 
     try {
-      console.log('Using unified auth for improved client signup...');
-      
-      const result = await supabase.functions.invoke('unified-auth', {
-        body: { 
+      const { data, error } = await supabase.functions.invoke('unified-auth', {
+        body: {
           action: 'signup',
-          email, 
+          email,
           password,
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          companyName: companyName.trim(),
+          companyName,
+          firstName,
+          lastName,
           accountType: 'client',
           sourceUrl: window.location.origin
         }
       });
-      
-      if (result.error) {
-        console.error('Unified auth signup error:', result.error);
-        setError(result.error.message || 'Sign up failed. Please try again.');
+
+      if (error) {
+        setError(error.message || 'Signup failed. Please try again.');
         return;
       }
 
-      if (result.data?.success) {
-        onSuccess(email, password);
+      if (data?.success) {
+        console.log('Signup successful, OTP sent');
+        onSuccess(email);
       } else {
-        setError(result.data?.error || 'Sign up failed. Please try again.');
+        setError(data?.error || 'Signup failed. Please try again.');
       }
-    } catch (error) {
-      console.error('Signup error:', error);
-      setError('Network error. Please check your connection and try again.');
+    } catch (err: any) {
+      console.error('Signup error:', err);
+      setError(err.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
   };
 
-  const signInWithGoogle = async () => {
-    try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl,
-        }
-      });
-
-      if (error) {
-        console.error('Google sign in error:', error);
-        setError(error.message);
-      }
-    } catch (error) {
-      console.error('Google sign in exception:', error);
-      setError('Failed to sign in with Google. Please try again.');
-    }
-  };
-
   return (
-    <div className="space-y-6">
-      {/* Google Auth Button */}
-      <Button
-        type="button"
-        onClick={signInWithGoogle}
-        disabled={loading}
-        className="w-full flex items-center justify-center gap-3 px-6 py-3 border border-border bg-white hover:bg-gray-50 rounded-xl font-medium text-foreground transition-all duration-300 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <svg className="w-5 h-5" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-        </svg>
-        Continue with Google
-      </Button>
-
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">or sign up with email</span>
-        </div>
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 animate-in slide-in-from-top-2">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="h-4 w-4 text-destructive" />
-            <p className="text-sm text-destructive">{error}</p>
+    <Card>
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl">Create an account</CardTitle>
+        <CardDescription>
+          Enter your email, password, and company details to create an account
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 rounded-md">
+            {error}
           </div>
-        </div>
-      )}
-
-      {/* Signup Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Name Fields */}
-        <div className="grid grid-cols-2 gap-3">
+        )}
+        <form onSubmit={handleSubmit} className="grid gap-4">
           <div className="space-y-2">
-            <Label htmlFor="firstName" className="text-sm font-medium">First Name</Label>
+            <Label htmlFor="email">Email</Label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                id="email"
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="pl-10 usergy-input"
+                required
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="usergy-input pr-10"
+                required
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                <span className="sr-only">Show password</span>
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="firstName">First Name</Label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 id="firstName"
                 type="text"
+                placeholder="First Name"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                placeholder="John"
                 className="pl-10 usergy-input"
                 required
-                disabled={loading}
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="lastName" className="text-sm font-medium">Last Name</Label>
+            <Label htmlFor="lastName">Last Name</Label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 id="lastName"
                 type="text"
+                placeholder="Last Name"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
-                placeholder="Doe"
                 className="pl-10 usergy-input"
                 required
-                disabled={loading}
               />
             </div>
           </div>
-        </div>
-
-        {/* Company Name */}
-        <div className="space-y-2">
-          <Label htmlFor="companyName" className="text-sm font-medium">Company Name</Label>
-          <div className="relative">
-            <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              id="companyName"
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="Acme Corp"
-              className="pl-10 usergy-input"
-              required
-              disabled={loading}
-            />
-          </div>
-        </div>
-
-        {/* Email */}
-        <div className="space-y-2">
-          <Label htmlFor="email" className="text-sm font-medium">Work Email</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="john@company.com"
-              className="pl-10 usergy-input"
-              required
-              disabled={loading}
-            />
-          </div>
-        </div>
-
-        {/* Password */}
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Create a secure password"
-              className="pl-10 usergy-input"
-              required
-              disabled={loading}
-              minLength={8}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Password must be at least 8 characters long
-          </p>
-        </div>
-
-        {/* Submit Button */}
-        <Button 
-          type="submit"
-          className="w-full usergy-btn-primary"
-          disabled={loading}
-        >
-          {loading ? (
-            <div className="flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              <span>Creating account...</span>
+          <div className="space-y-2">
+            <Label htmlFor="companyName">Company Name</Label>
+            <div className="relative">
+              <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                id="companyName"
+                type="text"
+                placeholder="Company Name"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="pl-10 usergy-input"
+                required
+              />
             </div>
-          ) : (
-            'Create Your Account'
-          )}
-        </Button>
-      </form>
-
-      {/* Terms */}
-      <p className="text-xs text-muted-foreground text-center">
-        By creating an account, you agree to our{' '}
-        <a href="/terms" className="underline hover:text-foreground">Terms of Service</a>
-        {' '}and{' '}
-        <a href="/privacy" className="underline hover:text-foreground">Privacy Policy</a>
-      </p>
-    </div>
+          </div>
+          <Button type="submit" className="w-full usergy-btn-primary" disabled={loading}>
+            {loading ? (
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>Creating account...</span>
+              </div>
+            ) : (
+              'Create Account'
+            )}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

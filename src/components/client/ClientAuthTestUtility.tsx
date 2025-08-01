@@ -1,206 +1,117 @@
-
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { supabase } from '@/lib/supabase';
-import { Loader2, User, Mail, Key } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { supabase } from '@/integrations/supabase/client';
 
 export function ClientAuthTestUtility() {
-  const { user, session, loading, isClientAccount, signUp, signIn, signOut } = useClientAuth();
-  const [testEmail, setTestEmail] = useState('test@example.com');
-  const [testPassword, setTestPassword] = useState('TestPassword123!');
-  const [isSigningUp, setIsSigningUp] = useState(false);
-  const [isSigningIn, setIsSigningIn] = useState(false);
-  const [message, setMessage] = useState('');
-  const [dbTestResult, setDbTestResult] = useState<any>(null);
+  const [userId, setUserId] = useState('');
+  const [sessionInfo, setSessionInfo] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleTestSignUp = async () => {
-    setIsSigningUp(true);
-    setMessage('');
-    
+  const fetchSessionInfo = async () => {
+    setLoading(true);
     try {
-      const result = await signUp(testEmail, testPassword, { companyName: 'Test Company' });
-      
-      if (result.success) {
-        if (result.emailSent) {
-          setMessage('Sign up successful! Check your email for verification.');
-        } else {
-          setMessage('Sign up successful! You are now logged in.');
-        }
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Error fetching session:', error);
+        setSessionInfo({ error: error.message });
       } else {
-        setMessage(`Sign up failed: ${result.error}`);
+        setSessionInfo(session);
       }
-    } catch (error) {
-      setMessage(`Sign up error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } catch (error: any) {
+      console.error('Unexpected error:', error);
+      setSessionInfo({ error: error.message || 'Unknown error' });
     } finally {
-      setIsSigningUp(false);
-    }
-  };
-
-  const handleTestSignIn = async () => {
-    setIsSigningIn(true);
-    setMessage('');
-    
-    try {
-      const result = await signIn(testEmail, testPassword);
-      
-      if (result.success) {
-        setMessage('Sign in successful!');
-      } else {
-        setMessage(`Sign in failed: ${result.error}`);
-      }
-    } catch (error) {
-      setMessage(`Sign in error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsSigningIn(false);
-    }
-  };
-
-  const testDatabaseConnection = async () => {
-    try {
-      // Test basic connection
-      const { data: accountTypes, error: accountError } = await supabase
-        .from('account_types')
-        .select('*')
-        .limit(1);
-
-      // Test client function
-      const { data: isClient, error: clientError } = await supabase
-        .rpc('is_client_account', { user_id_param: user?.id || '00000000-0000-0000-0000-000000000000' });
-
-      setDbTestResult({
-        accountTypesTest: { success: !accountError, data: accountTypes, error: accountError?.message },
-        clientFunctionTest: { success: !clientError, data: isClient, error: clientError?.message },
-        timestamp: new Date().toLocaleTimeString()
-      });
-    } catch (error) {
-      setDbTestResult({
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toLocaleTimeString()
-      });
+      setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6 p-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Client Auth Test Utility</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Current Auth State */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <h3 className="font-semibold">Current State</h3>
-              <div className="text-sm space-y-1">
-                <div>Loading: {loading ? '✅' : '❌'}</div>
-                <div>User: {user ? '✅' : '❌'}</div>
-                <div>Session: {session ? '✅' : '❌'}</div>
-                <div>Client Account: {isClientAccount ? '✅' : '❌'}</div>
-                {user && <div>Email: {user.email}</div>}
-              </div>
-            </div>
+    <Card className="w-[400px]">
+      <CardHeader>
+        <CardTitle>Client Auth Test Utility</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="user-id">User ID</Label>
+          <Input
+            id="user-id"
+            type="text"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            placeholder="Enter user ID"
+          />
+        </div>
 
-            <div className="space-y-2">
-              <h3 className="font-semibold">Test Credentials</h3>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Mail className="w-4 h-4" />
-                  <Input
-                    type="email"
-                    placeholder="Test email"
-                    value={testEmail}
-                    onChange={(e) => setTestEmail(e.target.value)}
-                    className="flex-1"
-                  />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Key className="w-4 h-4" />
-                  <Input
-                    type="password"
-                    placeholder="Test password"
-                    value={testPassword}
-                    onChange={(e) => setTestPassword(e.target.value)}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-            </div>
+        <Button onClick={fetchSessionInfo} disabled={loading}>
+          {loading ? 'Loading...' : 'Fetch Session Info'}
+        </Button>
+
+        {sessionInfo && (
+          <div className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Session Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {sessionInfo.error ? (
+                  <p className="text-red-500">Error: {sessionInfo.error}</p>
+                ) : (
+                  <>
+                    <p>
+                      <Badge>Access Token:</Badge>{' '}
+                      {sessionInfo.access_token ? 'Present' : 'Missing'}
+                    </p>
+                    <p>
+                      <Badge>Refresh Token:</Badge>{' '}
+                      {sessionInfo.refresh_token ? 'Present' : 'Missing'}
+                    </p>
+                    <Separator />
+                    <p>
+                      <Badge>User ID:</Badge> {sessionInfo.user?.id}
+                    </p>
+                    <p>
+                      <Badge>User Email:</Badge> {sessionInfo.user?.email}
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={handleTestSignUp}
-              disabled={isSigningUp || loading}
-              variant="default"
-            >
-              {isSigningUp && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Test Sign Up
-            </Button>
+function Label({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+    >
+      {children}
+    </label>
+  );
+}
 
-            <Button
-              onClick={handleTestSignIn}
-              disabled={isSigningIn || loading}
-              variant="outline"
-            >
-              {isSigningIn && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Test Sign In
-            </Button>
-
-            <Button
-              onClick={testDatabaseConnection}
-              variant="outline"
-            >
-              Test DB Connection
-            </Button>
-
-            {user && (
-              <Button
-                onClick={signOut}
-                variant="destructive"
-              >
-                Sign Out
-              </Button>
-            )}
-          </div>
-
-          {/* Messages */}
-          {message && (
-            <div className="p-3 bg-muted rounded-lg">
-              <p className="text-sm">{message}</p>
-            </div>
-          )}
-
-          {/* Database Test Results */}
-          {dbTestResult && (
-            <div className="p-3 bg-muted rounded-lg">
-              <h4 className="font-semibold mb-2">Database Test Results ({dbTestResult.timestamp})</h4>
-              {dbTestResult.error ? (
-                <p className="text-destructive text-sm">{dbTestResult.error}</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  <div>
-                    Account Types Query: {dbTestResult.accountTypesTest.success ? '✅' : '❌'}
-                    {dbTestResult.accountTypesTest.error && ` - ${dbTestResult.accountTypesTest.error}`}
-                  </div>
-                  <div>
-                    Client Function: {dbTestResult.clientFunctionTest.success ? '✅' : '❌'}
-                    {dbTestResult.clientFunctionTest.error && ` - ${dbTestResult.clientFunctionTest.error}`}
-                  </div>
-                  {user && (
-                    <div>
-                      Is Client: {dbTestResult.clientFunctionTest.data ? '✅' : '❌'}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+function Input({ id, type, value, onChange, placeholder }: {
+  id: string;
+  type: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder: string;
+}) {
+  return (
+    <input
+      type={type}
+      id={id}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+    />
   );
 }
