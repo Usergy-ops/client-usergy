@@ -4,6 +4,7 @@ import { corsHeaders } from '../_shared/cors.ts'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const resendApiKey = Deno.env.get('RESEND_API_KEY')
 
 // Create admin client for service operations
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
@@ -26,6 +27,121 @@ interface AuthRequest {
   otpCode?: string
   accountType?: 'user' | 'client'
   sourceUrl?: string
+}
+
+// Email template functions
+function generateOTPEmailHTML(data: {
+  email: string
+  otpCode: string
+  companyName?: string
+  firstName?: string
+  lastName?: string
+  sourceUrl: string
+}): string {
+  const { email, otpCode, companyName, firstName, lastName, sourceUrl } = data;
+  const displayName = firstName && lastName ? `${firstName} ${lastName}` : email;
+  const welcomeMessage = companyName ? `Welcome to Usergy! We're excited to have ${companyName} join our platform.` : 'Welcome to Usergy!';
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email - Usergy</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; padding: 40px 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 40px; }
+        .logo { font-size: 28px; font-weight: bold; color: #2563eb; margin-bottom: 10px; }
+        .otp-container { background-color: #f8fafc; border: 2px solid #e2e8f0; border-radius: 8px; padding: 30px; text-align: center; margin: 30px 0; }
+        .otp-code { font-size: 32px; font-weight: bold; color: #1e293b; letter-spacing: 8px; margin: 20px 0; font-family: 'Courier New', monospace; }
+        .footer { text-align: center; margin-top: 40px; color: #64748b; font-size: 14px; }
+        .warning { background-color: #fef3cd; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">USERGY</div>
+            <h1 style="color: #1e293b; margin: 0;">Email Verification</h1>
+        </div>
+        <p style="color: #475569; font-size: 16px; line-height: 1.6;">Hi ${displayName},</p>
+        <p style="color: #475569; font-size: 16px; line-height: 1.6;">${welcomeMessage}</p>
+        <p style="color: #475569; font-size: 16px; line-height: 1.6;">To complete your account setup, please use the verification code below:</p>
+        <div class="otp-container">
+            <p style="color: #475569; margin: 0; font-size: 14px; margin-bottom: 10px;">Your verification code:</p>
+            <div class="otp-code">${otpCode}</div>
+            <p style="color: #64748b; margin: 0; font-size: 12px; margin-top: 10px;">This code expires in 10 minutes</p>
+        </div>
+        <div class="warning">
+            <p style="color: #92400e; margin: 0; font-size: 14px;"><strong>Security Notice:</strong> Never share this code with anyone. Usergy will never ask for this code via phone or email.</p>
+        </div>
+        <p style="color: #475569; font-size: 14px; line-height: 1.6;">If you didn't request this verification code, please ignore this email or contact our support team.</p>
+        <div class="footer">
+            <p>© 2025 Usergy. All rights reserved.</p>
+            <p>This email was sent from <a href="${sourceUrl}" style="color: #2563eb;">${sourceUrl}</a></p>
+        </div>
+    </div>
+</body>
+</html>
+  `;
+}
+
+async function sendOTPEmail(email: string, otpCode: string, metadata: any, sourceUrl: string): Promise<boolean> {
+  if (!resendApiKey) {
+    console.error('RESEND_API_KEY not configured');
+    return false;
+  }
+
+  try {
+    const emailHTML = generateOTPEmailHTML({
+      email,
+      otpCode,
+      companyName: metadata?.company_name,
+      firstName: metadata?.first_name,
+      lastName: metadata?.last_name,
+      sourceUrl
+    });
+
+    const emailText = `Hi ${metadata?.first_name && metadata?.last_name ? `${metadata.first_name} ${metadata.last_name}` : email},
+
+Welcome to Usergy! To complete your account setup, please use this verification code: ${otpCode}
+
+This code expires in 10 minutes.
+
+SECURITY NOTICE: Never share this code with anyone.
+
+© 2025 Usergy. All rights reserved.`;
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'Usergy <noreply@usergy.ai>',
+        to: [email],
+        subject: 'Verify Your Email - Usergy',
+        html: emailHTML,
+        text: emailText,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Resend API error:', errorData);
+      return false;
+    }
+
+    const result = await response.json();
+    console.log('Email sent successfully:', result);
+    return true;
+  } catch (error) {
+    console.error('Email sending error:', error);
+    return false;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -125,6 +241,11 @@ async function handleSignup(body: AuthRequest) {
       // Generate and store OTP for clients
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+      const metadata = {
+        company_name: companyName,
+        first_name: firstName,
+        last_name: lastName
+      }
 
       const { error: otpError } = await supabaseAdmin
         .from('auth_otp_verifications')
@@ -134,11 +255,7 @@ async function handleSignup(body: AuthRequest) {
           expires_at: expiresAt.toISOString(),
           account_type: 'client',
           source_url: sourceUrl || 'https://client.usergy.ai',
-          metadata: {
-            company_name: companyName,
-            first_name: firstName,
-            last_name: lastName
-          }
+          metadata
         })
 
       if (otpError) {
@@ -151,15 +268,31 @@ async function handleSignup(body: AuthRequest) {
         )
       }
 
-      console.log(`Client signup successful for: ${email}, OTP: ${otpCode}`)
+      // Send OTP email
+      const emailSent = await sendOTPEmail(email, otpCode, metadata, sourceUrl || 'https://client.usergy.ai')
+
+      if (!emailSent) {
+        console.warn('Email sending failed, but continuing with signup process')
+      }
+
+      // Log email attempt
+      await supabaseAdmin
+        .from('email_send_logs')
+        .insert({
+          email,
+          email_type: 'otp_verification',
+          status: emailSent ? 'sent' : 'failed',
+          metadata: { otp_code: otpCode, account_type: 'client' }
+        })
+
+      console.log(`Client signup successful for: ${email}`)
 
       return new Response(
         JSON.stringify({ 
           success: true, 
           message: 'Account created. Check your email for verification code.',
-          emailSent: true,
-          accountType: 'client',
-          debug: { otpCode } // Remove in production
+          emailSent: emailSent,
+          accountType: 'client'
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -278,6 +411,15 @@ async function handleResendOTP(body: AuthRequest) {
 
     console.log(`OTP resend request for: ${email}`)
 
+    // Get the latest OTP record for metadata
+    const { data: latestOtp } = await supabaseAdmin
+      .from('auth_otp_verifications')
+      .select('metadata, source_url')
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
     // Generate new OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
@@ -297,7 +439,8 @@ async function handleResendOTP(body: AuthRequest) {
         otp_code: otpCode,
         expires_at: expiresAt.toISOString(),
         account_type: 'client',
-        source_url: 'https://client.usergy.ai'
+        source_url: latestOtp?.source_url || 'https://client.usergy.ai',
+        metadata: latestOtp?.metadata || {}
       })
 
     if (otpError) {
@@ -308,13 +451,31 @@ async function handleResendOTP(body: AuthRequest) {
       )
     }
 
-    console.log(`OTP resent for: ${email}, new OTP: ${otpCode}`)
+    // Send OTP email
+    const emailSent = await sendOTPEmail(
+      email, 
+      otpCode, 
+      latestOtp?.metadata || {}, 
+      latestOtp?.source_url || 'https://client.usergy.ai'
+    )
+
+    // Log email attempt
+    await supabaseAdmin
+      .from('email_send_logs')
+      .insert({
+        email,
+        email_type: 'otp_resend',
+        status: emailSent ? 'sent' : 'failed',
+        metadata: { otp_code: otpCode, resend: true }
+      })
+
+    console.log(`OTP resent for: ${email}, email sent: ${emailSent}`)
 
     return new Response(
       JSON.stringify({ 
         success: true,
         message: 'New verification code sent',
-        debug: { otpCode } // Remove in production
+        emailSent
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )

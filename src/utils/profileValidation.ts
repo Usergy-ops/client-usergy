@@ -11,9 +11,9 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
   try {
     console.log('Checking profile completion for user:', userId);
     
-    // Call the profile completion function if it exists, otherwise use direct table check
+    // Call the profile completion function with correct parameter name
     const { data, error } = await supabase.rpc('calculate_profile_completion', {
-      user_id_param: userId
+      user_uuid: userId
     });
 
     if (error) {
@@ -26,8 +26,11 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
 
     console.log('Profile completion result:', data);
     
+    // Handle the numeric return value from the function
+    const completionPercentage = typeof data === 'number' ? data : 0;
+    
     return {
-      isComplete: data === true
+      isComplete: completionPercentage >= 80 // Consider 80% or higher as complete
     };
   } catch (error) {
     console.error('Exception in profile completion check:', error);
