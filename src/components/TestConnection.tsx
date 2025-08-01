@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
 import { Button } from '@/components/ui/button';
-import { ClientAccountDiagnostics } from '@/utils/clientAccountDiagnostics';
+import { UnifiedClientService } from '@/services/UnifiedClientService';
 
 export function TestConnection() {
   const { user } = useClientAuth();
@@ -30,16 +30,8 @@ export function TestConnection() {
         
         // Test the client check function if user is logged in
         if (user) {
-          const { data: clientCheck, error: clientError } = await supabase.rpc('is_client_account', {
-            user_id_param: user.id
-          });
-          
-          if (clientError) {
-            console.error('Client check error:', clientError);
-            setClientStatus({ error: clientError.message });
-          } else {
-            setClientStatus({ is_client: clientCheck });
-          }
+          const isClient = await UnifiedClientService.isClientAccount(user.id);
+          setClientStatus({ is_client: isClient });
         }
         
         setStatus('connected');
@@ -57,28 +49,22 @@ export function TestConnection() {
     if (!user) return;
     
     try {
-      // Simple diagnostic check using existing tables
-      const { data: accountType, error: accountError } = await supabase
-        .from('account_types')
-        .select('account_type')
-        .eq('auth_user_id', user.id)
-        .single();
-
-      // Check profiles table instead of non-existent client table
-      const { data: profileRecord, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      setDiagnosticInfo({
-        user_exists: true,
-        user_email: user.email,
-        account_type_exists: !accountError,
-        account_type: accountType?.account_type,
-        profile_record_exists: !profileError,
-        profile_data: profileRecord
-      });
+      const statusResult = await UnifiedClientService.getAccountStatus(user.id);
+      
+      if (statusResult.success) {
+        const status = statusResult.data!;
+        setDiagnosticInfo({
+          user_exists: true,
+          user_email: status.email,
+          account_type_exists: !!status.accountType,
+          account_type: status.accountType,
+          is_client: status.isClient,
+          has_client_record: status.hasClientRecord,
+          profile_complete: status.isProfileComplete
+        });
+      } else {
+        setDiagnosticInfo({ error: statusResult.error });
+      }
     } catch (error) {
       console.error('Diagnostic error:', error);
       setDiagnosticInfo({ error: error instanceof Error ? error.message : 'Unknown error' });
@@ -89,15 +75,40 @@ export function TestConnection() {
     if (!user) return;
     
     try {
-      const result = await ClientAccountDiagnostics.checkRLSPolicies(user.id);
+      // Simple RLS test using existing tables
+      const tests = [
+        { table: 'account_types', operation: 'select' },
+        { table: 'profiles', operation: 'select' },
+        { table: 'company_profiles', operation: 'select' }
+      ];
       
-      if (result.success) {
-        console.log('RLS test results:', result.data);
-        setRlsTestResults(result.data || []);
-      } else {
-        console.error('RLS test error:', result.error);
-        setRlsTestResults([{ error: result.error }]);
+      const results = [];
+      
+      for (const test of tests) {
+        try {
+          const { data, error } = await supabase
+            .from(test.table)
+            .select('*')
+            .eq('auth_user_id', user.id)
+            .limit(1);
+            
+          results.push({
+            table_name: test.table,
+            operation: test.operation,
+            can_access: !error,
+            error_message: error?.message
+          });
+        } catch (err) {
+          results.push({
+            table_name: test.table,
+            operation: test.operation,
+            can_access: false,
+            error_message: err instanceof Error ? err.message : 'Unknown error'
+          });
+        }
       }
+      
+      setRlsTestResults(results);
     } catch (error) {
       console.error('RLS test exception:', error);
       setRlsTestResults([{ error: error instanceof Error ? error.message : 'Unknown error' }]);
@@ -108,8 +119,27 @@ export function TestConnection() {
     if (!user) return;
     
     try {
-      const result = await ClientAccountDiagnostics.testSimplifiedTrigger(user.email || '');
-      setTriggerTestResult(result);
+      // Test using the profile completion check
+      const result = await UnifiedClientService.checkProfileCompletion(user.id);
+      
+      if (result.success) {
+        setTriggerTestResult({
+          success: true,
+          data: {
+            user_id: user.id,
+            email: user.email,
+            has_account_type: true,
+            account_type: 'client',
+            has_company_profile: result.data?.isComplete,
+            company_name: 'Test Company'
+          }
+        });
+      } else {
+        setTriggerTestResult({
+          success: false,
+          error: result.error
+        });
+      }
     } catch (error) {
       console.error('Trigger test error:', error);
       setTriggerTestResult({ 
@@ -126,18 +156,14 @@ export function TestConnection() {
     try {
       console.log('Performing basic account repair...');
       
-      // Call the ensure client account function
-      const { data, error } = await supabase.rpc('ensure_client_account', {
-        user_id_param: user.id,
-        company_name_param: 'My Company'
-      });
+      const result = await UnifiedClientService.repairClientAccount(user.id);
 
-      if (error) {
-        setDiagnosticInfo({ error: error.message });
-      } else {
-        setDiagnosticInfo({ message: 'Account repair completed', data });
+      if (result.success) {
+        setDiagnosticInfo({ message: 'Account repair completed', data: result.data });
         // Re-run diagnostic after repair
         setTimeout(runBasicDiagnostic, 1000);
+      } else {
+        setDiagnosticInfo({ error: result.error });
       }
     } catch (error) {
       console.error('Repair error:', error);
@@ -237,7 +263,9 @@ export function TestConnection() {
                 <div>Email: {diagnosticInfo.user_email}</div>
                 <div>Has Account Type: {diagnosticInfo.account_type_exists ? '✓' : '✗'}</div>
                 <div>Account Type: {diagnosticInfo.account_type}</div>
-                <div>Has Profile Record: {diagnosticInfo.profile_record_exists ? '✓' : '✗'}</div>
+                <div>Is Client: {diagnosticInfo.is_client ? '✓' : '✗'}</div>
+                <div>Has Client Record: {diagnosticInfo.has_client_record ? '✓' : '✗'}</div>
+                <div>Profile Complete: {diagnosticInfo.profile_complete ? '✓' : '✗'}</div>
               </>
             )}
           </div>
