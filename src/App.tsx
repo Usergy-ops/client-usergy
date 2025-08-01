@@ -1,4 +1,4 @@
-
+// src/App.tsx (Client Project)
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,14 +10,12 @@ import { useSessionBroadcast } from "@/hooks/useSessionBroadcast";
 import Welcome from "./pages/Welcome";
 import ProfileSetup from "./pages/ProfileSetup";
 import ClientDashboard from "./pages/ClientDashboard";
-import AuthCallback from '@/pages/AuthCallback';
+import AuthCallback from './pages/AuthCallback'; // Fixed import
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-// Inner app component that can use the auth context
 const AppContent = () => {
-  // Initialize session broadcasting for multi-tab support
   useSessionBroadcast();
 
   return (
@@ -43,7 +41,6 @@ const AppContent = () => {
             </ClientProtectedRoute>
           } 
         />
-        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </TooltipProvider>
@@ -61,19 +58,3 @@ const App = () => (
 );
 
 export default App;
-
-// Ensure this import exists
-import { lazy, Suspense } from 'react';
-
-// Add lazy loading for AuthCallback
-const AuthCallback = lazy(() => import('@/pages/auth/callback'));
-
-// In your Routes, wrap with Suspense
-<Route 
-  path="/auth/callback" 
-  element={
-    <Suspense fallback={<div>Loading...</div>}>
-      <AuthCallback />
-    </Suspense>
-  } 
-/>
