@@ -1,7 +1,7 @@
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { useClientAuth } from '@/contexts/ClientAuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 
 interface ClientProtectedRouteProps {
   children: ReactNode;
@@ -9,6 +9,7 @@ interface ClientProtectedRouteProps {
 
 export function ClientProtectedRoute({ children }: ClientProtectedRouteProps) {
   const { user, session, loading, isClientAccount } = useClientAuth();
+  const location = useLocation();
 
   // Enhanced loading state with better UX
   if (loading) {

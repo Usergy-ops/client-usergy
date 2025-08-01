@@ -230,9 +230,11 @@ export function ClientAuthProvider({ children }: { children: React.ReactNode }) 
     try {
       const redirectUrl = `${window.location.origin}/auth/callback`;
       
-      // Store account type for OAuth callback handling
+      // Store account type for OAuth callback handling - always client for this context
       localStorage.setItem('pending_account_type', 'client');
       localStorage.setItem('pending_source_url', window.location.origin);
+      
+      console.log('Starting Google OAuth with redirect URL:', redirectUrl);
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',

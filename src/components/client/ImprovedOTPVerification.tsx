@@ -75,9 +75,9 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
           description: "Your account has been created successfully.",
         });
         
-        // Wait a moment for the success animation
+        // Wait a moment for the success animation then redirect to profile
         setTimeout(() => {
-          navigate('/dashboard');
+          navigate('/profile');
         }, 1500);
       } else {
         setError('Verification successful but session creation failed. Please try signing in.');
@@ -130,7 +130,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
         <div>
           <h2 className="text-2xl font-bold text-foreground">Account Created!</h2>
           <p className="text-muted-foreground mt-2">
-            Welcome to Usergy! Redirecting you to your dashboard...
+            Welcome to Usergy! Redirecting you to complete your profile...
           </p>
         </div>
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
@@ -200,7 +200,7 @@ export function ImprovedOTPVerification({ email, password, onBack }: ImprovedOTP
               <span>Verifying...</span>
             </div>
           ) : (
-            'Verify & Create Account'
+            'Verify & Complete Setup'
           )}
         </Button>
 

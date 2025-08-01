@@ -1,6 +1,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { retryOperation, isRetryableError } from '@/utils/retryUtility';
 
 interface OTPVerificationResult {
   success: boolean;
@@ -20,40 +21,53 @@ export function useOTPVerification() {
     try {
       console.log('Using unified auth system for OTP verification:', email);
 
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'verify-otp',
-          email, 
-          otpCode, 
-          password 
-        }
-      });
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'verify-otp',
+              email, 
+              otpCode, 
+              password 
+            }
+          });
 
-      if (error) {
-        console.error('Unified auth verification error:', error);
-        setError('Verification failed. Please try again.');
-        return { success: false, error: { message: error.message || 'Verification failed' } };
-      }
+          if (error) {
+            throw error;
+          }
 
-      if (data?.success && data?.session) {
+          return data;
+        },
+        { maxRetries: 3, delay: 1000 }
+      );
+
+      if (result?.success && result?.session) {
         console.log('OTP verification successful via unified auth');
         
         // Set the session manually since we got it from the edge function
         await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
+          access_token: result.session.access_token,
+          refresh_token: result.session.refresh_token
         });
 
-        return { success: true, data };
+        return { success: true, data: result };
       }
 
-      const errorMessage = data?.error || 'Invalid verification code. Please try again.';
+      const errorMessage = result?.error || 'Invalid verification code. Please try again.';
       setError(errorMessage);
       return { success: false, error: { message: errorMessage } };
 
     } catch (error) {
       console.error('OTP verification exception:', error);
-      const errorMessage = 'Network error. Please check your connection and try again.';
+      
+      let errorMessage = 'Network error. Please check your connection and try again.';
+      
+      if (error?.message?.includes('Invalid or expired')) {
+        errorMessage = 'Invalid or expired verification code. Please try again or request a new code.';
+      } else if (error?.message?.includes('User already exists')) {
+        errorMessage = 'This email is already registered. Please try signing in instead.';
+      }
+      
       setError(errorMessage);
       return { success: false, error: { message: errorMessage } };
     } finally {
@@ -68,25 +82,30 @@ export function useOTPVerification() {
     try {
       console.log('Using unified auth system for OTP resend:', email);
 
-      const { data, error } = await supabase.functions.invoke('unified-auth', {
-        body: { 
-          action: 'resend-otp',
-          email
-        }
-      });
+      const result = await retryOperation(
+        async () => {
+          const { data, error } = await supabase.functions.invoke('unified-auth', {
+            body: { 
+              action: 'resend-otp',
+              email
+            }
+          });
 
-      if (error) {
-        console.error('Unified auth resend error:', error);
-        setError('Failed to resend code. Please try again.');
-        return { success: false, error: { message: error.message || 'Failed to resend code' } };
-      }
+          if (error) {
+            throw error;
+          }
 
-      if (data?.success) {
+          return data;
+        },
+        { maxRetries: 2, delay: 1500 }
+      );
+
+      if (result?.success) {
         console.log('OTP resend successful via unified auth');
         return { success: true, data: { message: 'Code resent successfully' } };
       }
 
-      const errorMessage = data?.error || 'Failed to resend code. Please try again.';
+      const errorMessage = result?.error || 'Failed to resend code. Please try again.';
       setError(errorMessage);
       return { success: false, error: { message: errorMessage } };
 

@@ -155,6 +155,7 @@ Deno.serve(async (req) => {
     const { action } = body
 
     console.log(`Unified Auth Handler: ${action} action requested`)
+    console.log('Request body received:', JSON.stringify({ ...body, password: body.password ? '[REDACTED]' : undefined }))
 
     switch (action) {
       case 'signup':
@@ -164,15 +165,16 @@ Deno.serve(async (req) => {
       case 'resend-otp':
         return await handleResendOTP(body)
       default:
+        console.error('Invalid action received:', action)
         return new Response(
-          JSON.stringify({ error: 'Invalid action' }),
+          JSON.stringify({ error: `Invalid action: ${action}` }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
   } catch (error) {
     console.error('Handler error:', error)
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({ error: 'Internal server error', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -234,6 +236,21 @@ async function handleSignup(body: AuthRequest) {
         JSON.stringify({ error: authError.message }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
+    }
+
+    console.log(`User created successfully: ${authData.user.id}`)
+
+    // Store account type in account_types table
+    const { error: accountTypeError } = await supabaseAdmin
+      .from('account_types')
+      .insert({
+        auth_user_id: authData.user.id,
+        account_type: detectedAccountType
+      })
+
+    if (accountTypeError) {
+      console.error('Account type storage error:', accountTypeError)
+      // Continue anyway, this is not critical
     }
 
     // Handle account type specific flow
@@ -318,7 +335,7 @@ async function handleSignup(body: AuthRequest) {
   } catch (error) {
     console.error('Signup error:', error)
     return new Response(
-      JSON.stringify({ error: 'Signup failed' }),
+      JSON.stringify({ error: 'Signup failed', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -384,8 +401,8 @@ async function handleVerifyOTP(body: AuthRequest) {
         JSON.stringify({ 
           success: true,
           message: 'Email verified and signed in successfully',
-          session: sessionData,
-          userId: userData.id
+          session: sessionData.session,
+          user: sessionData.user
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
@@ -399,7 +416,7 @@ async function handleVerifyOTP(body: AuthRequest) {
   } catch (error) {
     console.error('OTP verification error:', error)
     return new Response(
-      JSON.stringify({ error: 'Verification failed' }),
+      JSON.stringify({ error: 'Verification failed', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
@@ -483,7 +500,7 @@ async function handleResendOTP(body: AuthRequest) {
   } catch (error) {
     console.error('OTP resend error:', error)
     return new Response(
-      JSON.stringify({ error: 'Failed to resend code' }),
+      JSON.stringify({ error: 'Failed to resend code', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
