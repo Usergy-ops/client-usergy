@@ -1,7 +1,8 @@
+
 // src/contexts/ClientAuthContext.tsx
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ClientAuthContextType {
   user: User | null;
@@ -10,6 +11,7 @@ interface ClientAuthContextType {
   isClientAccount: boolean;
   signUp: (email: string, password: string, companyData?: any) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   verifyOTP: (email: string, otp: string, password: string) => Promise<{ error: string | null }>;
@@ -66,11 +68,11 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const signUp = async (email: string, password: string, companyData?: any) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/unified-auth`, {
+      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/unified-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
         },
         body: JSON.stringify({
           action: 'signup',
@@ -103,17 +105,39 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
+  const signInWithGoogle = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent'
+          }
+        }
+      });
+      
+      if (error) {
+        return { error: error.message };
+      }
+      return { error: null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'An error occurred' };
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
   const verifyOTP = async (email: string, otp: string, password: string) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/unified-auth`, {
+      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/unified-auth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
         },
         body: JSON.stringify({
           action: 'verify',
@@ -151,4 +175,34 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      setUser(session
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        checkClientAccount(session.user.id);
+      } else {
+        setIsClientAccount(false);
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [checkClientAccount]);
+
+  return (
+    <ClientAuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        isClientAccount,
+        signUp,
+        signIn,
+        signInWithGoogle,
+        signOut,
+        refreshSession,
+        verifyOTP,
+      }}
+    >
+      {children}
+    </ClientAuthContext.Provider>
+  );
+};

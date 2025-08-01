@@ -1,6 +1,5 @@
 
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
 
 interface OTPVerificationState {
   isVerifying: boolean;
@@ -21,17 +20,28 @@ export function useOTPVerification() {
     setState(prev => ({ ...prev, isVerifying: true, error: null }));
 
     try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/verify-otp', {
-        body: { email, otpCode }
+      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/client-auth-handler`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
+        },
+        body: JSON.stringify({ 
+          action: 'verify-otp',
+          email, 
+          otpCode 
+        })
       });
 
-      if (error) {
+      const data = await response.json();
+
+      if (!response.ok) {
         setState(prev => ({ 
           ...prev, 
           isVerifying: false, 
           error: 'Invalid verification code. Please try again.' 
         }));
-        return { success: false, error };
+        return { success: false, error: data.error };
       }
 
       if (data && data.success) {
@@ -63,17 +73,27 @@ export function useOTPVerification() {
     setState(prev => ({ ...prev, isResending: true, error: null }));
 
     try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/resend-otp', {
-        body: { email }
+      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/client-auth-handler`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
+        },
+        body: JSON.stringify({ 
+          action: 'resend-otp',
+          email 
+        })
       });
 
-      if (error) {
+      const data = await response.json();
+
+      if (!response.ok) {
         setState(prev => ({ 
           ...prev, 
           isResending: false, 
           error: 'Failed to resend verification code. Please try again.' 
         }));
-        return { success: false, error };
+        return { success: false, error: data.error };
       }
 
       if (data && data.success) {

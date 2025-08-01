@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, Mail, Lock, Building, User } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { OTPVerification } from './OTPVerification';
 import { useToast } from '@/hooks/use-toast';
 import { useErrorLogger } from '@/hooks/useErrorLogger';
@@ -67,19 +66,27 @@ export function ClientSignUpForm() {
     setError('');
     
     try {
-      const { data, error } = await supabase.functions.invoke('client-auth-handler/signup', {
-        body: {
+      const response = await fetch(`https://lnsyrmpucmllakuuiixe.supabase.co/functions/v1/client-auth-handler`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxuc3lybXB1Y21sbGFrdXVpaXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzNTI5MjQsImV4cCI6MjA2ODkyODkyNH0.kgdtlLTMLEHMBidAAB7fqP9_RhPXsqwI2Tv-TmmyF3Y`
+        },
+        body: JSON.stringify({
+          action: 'signup',
           email: formData.email,
           password: formData.password,
           companyName: formData.companyName,
           firstName: formData.contactFirstName,
           lastName: formData.contactLastName
-        }
+        })
       });
 
-      if (error) {
-        await logAuthError(error, 'email_signup');
-        setError(error.message || 'Failed to create account. Please try again.');
+      const data = await response.json();
+
+      if (!response.ok) {
+        await logAuthError(new Error(data.error), 'email_signup');
+        setError(data.error || 'Failed to create account. Please try again.');
         return;
       }
 
