@@ -92,18 +92,21 @@ export class EnhancedClientAccountDiagnostics {
         };
       }
 
-      // Test RPC function access
+      // Test database connectivity by checking account_types table
       try {
-        const { data: rpcTest, error: rpcError } = await supabase
-          .rpc('is_client_account', { user_id_param: user?.id || '00000000-0000-0000-0000-000000000000' });
+        const { data: accountType, error: accountError } = await supabase
+          .from('account_types')
+          .select('account_type')
+          .eq('auth_user_id', user?.id || '00000000-0000-0000-0000-000000000000')
+          .single();
 
-        diagnostic.checks.rpc_function = {
-          accessible: !rpcError,
-          error: rpcError?.message || null,
-          result: rpcTest
+        diagnostic.checks.database_connectivity = {
+          accessible: !accountError,
+          error: accountError?.message || null,
+          has_account_type: !!accountType
         };
       } catch (error) {
-        diagnostic.checks.rpc_function = { error: error instanceof Error ? error.message : 'Unknown error' };
+        diagnostic.checks.database_connectivity = { error: error instanceof Error ? error.message : 'Unknown error' };
       }
 
       return {
@@ -130,25 +133,27 @@ export class EnhancedClientAccountDiagnostics {
     try {
       console.log('Testing enhanced edge function health...');
       
-      // Test RPC function connectivity
+      // Test database connectivity instead of RPC function
       const { data: testResult, error } = await supabase
-        .rpc('is_client_account', { user_id_param: '00000000-0000-0000-0000-000000000000' });
+        .from('account_types')
+        .select('id')
+        .limit(1);
 
       if (error) {
         return {
           success: false,
-          error: `RPC function connectivity test failed: ${error.message}`,
+          error: `Database connectivity test failed: ${error.message}`,
           timestamp,
-          source: 'rpc_connectivity_test_failed'
+          source: 'database_connectivity_test_failed'
         };
       }
 
       return {
         success: true,
         data: {
-          rpc_function_accessible: true,
+          database_accessible: true,
           simplified_mode: true,
-          message: 'Using simplified client diagnostics with RPC functions'
+          message: 'Using simplified client diagnostics with direct database access'
         },
         timestamp,
         source: 'simplified_health_check'

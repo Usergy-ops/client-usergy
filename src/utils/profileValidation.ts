@@ -11,8 +11,8 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
   try {
     console.log('Checking profile completion for user:', userId);
     
-    // Call the updated database function to check if basic client record exists
-    const { data, error } = await supabase.rpc('is_profile_complete', {
+    // Call the profile completion function if it exists, otherwise use direct table check
+    const { data, error } = await supabase.rpc('calculate_profile_completion', {
       user_id_param: userId
     });
 
@@ -40,15 +40,19 @@ export async function checkProfileCompletion(userId: string): Promise<ProfileCom
 
 export async function getIncompleteProfileFields(userId: string): Promise<string[]> {
   try {
-    // Use is_client_account function to check if client exists, since we can't query the table directly
-    const { data: isClient, error: clientError } = await supabase.rpc('is_client_account', {
-      user_id_param: userId
-    });
+    // Check if user has a client account type directly from database
+    const { data: accountType, error: accountError } = await supabase
+      .from('account_types')
+      .select('account_type')
+      .eq('auth_user_id', userId)
+      .single();
 
-    if (clientError) {
-      console.error('Error checking client account:', clientError);
-      return [];
+    if (accountError || !accountType) {
+      console.error('Error checking account type:', accountError);
+      return ['email', 'company_name'];
     }
+
+    const isClient = accountType.account_type === 'client';
 
     if (!isClient) {
       return ['email', 'company_name'];
